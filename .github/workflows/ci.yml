@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  pull_request:
+    # « edited » permet de revérifier le titre de la PR quand il est corrigé.
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+# Une seule exécution utile par branche : les runs obsolètes sont annulés.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  commitlint:
+    name: Convention de commit
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # commitlint compare une plage de commits : il lui faut tout l'historique.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Vérifier les commits de la pull request
+        run: >
+          npx commitlint
+          --from "${{ github.event.pull_request.base.sha }}"
+          --to "${{ github.event.pull_request.head.sha }}"
+          --verbose
+
+      # Le titre de la PR devient le message de commit en cas de merge « squash ».
+      # Il est passé par une variable d'environnement, jamais interpolé dans le
+      # shell : c'est un texte libre écrit par un utilisateur.
+      - name: Vérifier le titre de la pull request
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Détecter le script npm « lint »
+        id: script
+        run: |
+          if node -e "process.exit((require('./package.json').scripts || {}).lint ? 0 : 1)"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: npm run lint
+        if: steps.script.outputs.present == 'true'
+        run: npm run lint
+
+      - name: Aucun linter configuré
+        if: steps.script.outputs.present == 'false'
+        run: |
+          echo "::warning title=Linter absent::Aucun script \"lint\" dans package.json. Ce job devient bloquant automatiquement dès que le script existe."
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Détecter le script npm « test »
+        id: script
+        run: |
+          if node -e "process.exit((require('./package.json').scripts || {}).test ? 0 : 1)"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: npm test
+        if: steps.script.outputs.present == 'true'
+        run: npm test
+
+      - name: Aucun test exécutable
+        if: steps.script.outputs.present == 'false'
+        run: |
+          echo "::warning title=Tests absents::Les specs de spec/ existent mais aucun script \"test\" n'est défini (issue #5). Ce job devient bloquant automatiquement dès que le script existe."
