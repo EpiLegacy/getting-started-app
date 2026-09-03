@@ -1,0 +1,32 @@
+# Dépendances
+node_modules/
+
+# Variables d'environnement
+.env
+.env.*
+!.env.example
+
+# Bases de données locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# Couverture et artefacts de build
+coverage/
+dist/
+build/
+*.tgz
+
+# Système et éditeurs
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
