@@ -1,0 +1,100 @@
+# Development baseline: "docker compose up" alone must yield a working
+# application, database and broker included.
+#
+# The "version:" key no longer exists in Compose v2 and is deliberately absent.
+
+name: legacy-kanban
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      # Setting MYSQL_HOST is enough to switch persistence from SQLite to
+      # MySQL (see src/persistence/index.ts).
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-todo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+      MYSQL_DB: ${MYSQL_DB:-todos}
+      # Consumed by the upcoming worker and by the outbox relay.
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+    depends_on:
+      # Load-bearing, not cosmetic: the MySQL adapter gives up after 10s
+      # (waitPort), while the first MySQL 8 startup takes far longer. Without
+      # this condition, "up" fails every other time.
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Uncomment once src/workers/notifications exists (event-driven foundations,
+  # Sprint 1). Same image as the API, only the command differs: code and event
+  # schemas cannot drift apart between the two.
+  # ---------------------------------------------------------------------------
+  # worker:
+  #   build:
+  #     context: .
+  #     target: runtime
+  #   restart: unless-stopped
+  #   command: ["node", "build/workers/notifications/index.js"]
+  #   environment:
+  #     MYSQL_HOST: mysql
+  #     MYSQL_USER: ${MYSQL_USER:-todo}
+  #     MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+  #     MYSQL_DB: ${MYSQL_DB:-todos}
+  #     RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_password}
+      MYSQL_DATABASE: ${MYSQL_DB:-todos}
+      MYSQL_USER: ${MYSQL_USER:-todo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+    ports:
+      # Debugging convenience (local SQL client). Safe to drop: the API reaches
+      # MySQL over the internal network, not through this published port.
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  rabbitmq:
+    # The "management" variant: its web UI is the visual evidence of the
+    # event-driven workflow during the Sprint Review.
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"      # AMQP
+      - "${RABBITMQ_UI_PORT:-15672}:15672" # management UI
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  mysql-data:
+  rabbitmq-data:
