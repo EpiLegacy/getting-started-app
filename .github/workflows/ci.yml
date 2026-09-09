@@ -197,3 +197,65 @@ jobs:
       - name: Stop the container
         if: always()
         run: docker rm -f smoke || true
+
+  publish:
+    name: Publish the image
+    # Only from main, and only once every other job agrees. A published image
+    # must correspond to a state the pipeline actually validated.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [typecheck, lint, test, build, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Granted on this job alone rather than at workflow level, so that no
+      # job running on a pull request can ever write to the registry.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR rejects uppercase names and the organisation is spelled
+      # "EpiLegacy", so github.repository cannot be used as is.
+      - name: Build the image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          # "latest" for humans, the full commit SHA for everything else: an
+          # immutable tag is what lets a deployment be traced back to a commit.
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Without this, buildx adds a provenance manifest that GHCR displays
+          # as a second "unknown/unknown" architecture on the package page.
+          provenance: false
+
+      - name: Report what was published
+        run: |
+          {
+            echo "### Image published"
+            echo
+            printf '%s\n' '${{ steps.meta.outputs.tags }}' | sed 's/^/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
