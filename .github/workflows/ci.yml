@@ -151,3 +151,49 @@ jobs:
             build/
             dist/
           if-no-files-found: error
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # sqlite3 has no prebuilt binary for Node 24 and compiles from source,
+      # which costs about three minutes cold. The GitHub Actions cache brings
+      # later runs down to seconds as long as the dependencies do not move.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: legacy-kanban:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building proves it compiles. Only starting it proves it runs.
+      - name: Smoke test the image
+        run: |
+          docker run -d --name smoke -p 3000:3000 legacy-kanban:ci
+          # --retry-connrefused alone is not enough: docker publishes the host
+          # port as soon as the container starts, so a request sent before the
+          # server listens is reset rather than refused, and curl treats a
+          # reset as a non-retryable error unless --retry-all-errors is set.
+          if ! curl -fsS --retry 20 --retry-delay 2 --retry-connrefused --retry-all-errors http://127.0.0.1:3000/items; then
+            echo "::error title=Image unusable::The container did not answer on /items."
+            docker logs smoke
+            exit 1
+          fi
+          echo
+          echo "Image answered on /items."
+
+      - name: Container logs
+        if: always()
+        run: docker logs smoke 2>&1 || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f smoke || true

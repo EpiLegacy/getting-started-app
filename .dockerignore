@@ -1,2 +1,41 @@
-node_modules
+# The build context is uploaded to the Docker daemon on every build, locally
+# and in CI. Everything the image does not need stays out of it.
+
+# Installed inside the image from the lockfile.
+node_modules/
+
+# The image compiles its own.
+build/
+dist/
+coverage/
+
+# History, tooling and tests: never read by the Dockerfile.
+.git/
+.gitignore
+.github/
+spec/
+jest.config.cjs
+commitlint.config.mts
+
+# Container tooling.
 Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Secrets and local databases must never reach the daemon.
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation.
+*.md
+
+# Editors and operating systems.
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.swp
