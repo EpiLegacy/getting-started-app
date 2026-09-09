@@ -14,8 +14,8 @@ ENV NODE_ENV=production
 # ---------------------------------------------------------------------------
 FROM base AS deps
 
-# TEMPORARY: sqlite3 builds from source whenever no prebuilt binary exists for
-# this Node version. These lines go away once Prisma + MySQL land
+# TEMPORARY: build sqlite3 from source because its prebuilt Linux binary
+# requires a newer glibc than Bookworm. These lines go away once Prisma + MySQL land
 # (audit sections 2.2 and 7.2).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 make g++ \
@@ -25,7 +25,7 @@ RUN apt-get update \
 # change, not on every source edit.
 COPY package.json package-lock.json ./
 # NODE_ENV=production makes npm skip devDependencies, hence the explicit flag.
-RUN --mount=type=cache,target=/root/.npm npm ci --include=dev
+RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm ci --include=dev
 
 # ---------------------------------------------------------------------------
 # build - types checked, backend compiled, frontend bundled
@@ -44,7 +44,7 @@ RUN npm run build                    # vite -> dist/
 # prod-deps - runtime dependencies only
 # ---------------------------------------------------------------------------
 FROM deps AS prod-deps
-RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
+RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm ci --omit=dev
 
 # ---------------------------------------------------------------------------
 # runtime - final image: no TS sources, no toolchain, no dev dependencies
