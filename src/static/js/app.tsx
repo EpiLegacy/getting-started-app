@@ -1,5 +1,14 @@
+import React from 'react';
+import ReactDOM from 'react-dom';
+import { Button, Col, Container, Form, InputGroup, Row } from 'react-bootstrap';
+
+interface Item {
+    id: string;
+    name: string;
+    completed: boolean;
+}
+
 function App() {
-    const { Container, Row, Col } = ReactBootstrap;
     return (
         <Container>
             <Row>
@@ -12,7 +21,7 @@ function App() {
 }
 
 function TodoListCard() {
-    const [items, setItems] = React.useState(null);
+    const [items, setItems] = React.useState<Item[] | null>(null);
 
     React.useEffect(() => {
         fetch('/items')
@@ -21,33 +30,33 @@ function TodoListCard() {
     }, []);
 
     const onNewItem = React.useCallback(
-        newItem => {
-            setItems([...items, newItem]);
+        (newItem: Item) => {
+            setItems([...items!, newItem]);
         },
         [items],
     );
 
     const onItemUpdate = React.useCallback(
-        item => {
-            const index = items.findIndex(i => i.id === item.id);
+        (item: Item) => {
+            const index = items!.findIndex(i => i.id === item.id);
             setItems([
-                ...items.slice(0, index),
+                ...items!.slice(0, index),
                 item,
-                ...items.slice(index + 1),
+                ...items!.slice(index + 1),
             ]);
         },
         [items],
     );
 
     const onItemRemoval = React.useCallback(
-        item => {
-            const index = items.findIndex(i => i.id === item.id);
-            setItems([...items.slice(0, index), ...items.slice(index + 1)]);
+        (item: Item) => {
+            const index = items!.findIndex(i => i.id === item.id);
+            setItems([...items!.slice(0, index), ...items!.slice(index + 1)]);
         },
         [items],
     );
 
-    if (items === null) return 'Loading...';
+    if (items === null) return <React.Fragment>Loading...</React.Fragment>;
 
     return (
         <React.Fragment>
@@ -67,13 +76,16 @@ function TodoListCard() {
     );
 }
 
-function AddItemForm({ onNewItem }) {
-    const { Form, InputGroup, Button } = ReactBootstrap;
+interface AddItemFormProps {
+    onNewItem: (item: Item) => void;
+}
+
+function AddItemForm({ onNewItem }: AddItemFormProps) {
 
     const [newItem, setNewItem] = React.useState('');
     const [submitting, setSubmitting] = React.useState(false);
 
-    const submitNewItem = e => {
+    const submitNewItem = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setSubmitting(true);
         fetch('/items', {
@@ -94,7 +106,9 @@ function AddItemForm({ onNewItem }) {
             <InputGroup className="mb-3">
                 <Form.Control
                     value={newItem}
-                    onChange={e => setNewItem(e.target.value)}
+                    onChange={e =>
+                        setNewItem((e.target as HTMLInputElement).value)
+                    }
                     type="text"
                     placeholder="New Item"
                     aria-describedby="basic-addon1"
@@ -114,8 +128,13 @@ function AddItemForm({ onNewItem }) {
     );
 }
 
-function ItemDisplay({ item, onItemUpdate, onItemRemoval }) {
-    const { Container, Row, Col, Button } = ReactBootstrap;
+interface ItemDisplayProps {
+    item: Item;
+    onItemUpdate: (item: Item) => void;
+    onItemRemoval: (item: Item) => void;
+}
+
+function ItemDisplay({ item, onItemUpdate, onItemRemoval }: ItemDisplayProps) {
 
     const toggleCompletion = () => {
         fetch(`/items/${item.id}`, {

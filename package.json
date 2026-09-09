@@ -1,21 +1,39 @@
 {
   "name": "101-app",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/index.ts",
   "license": "MIT",
   "scripts": {
-    "dev": "nodemon -L src/index.js",
-    "test": "jest"
+    "build": "vite build",
+    "dev": "concurrently \"nodemon -L --exec tsx src/index.ts\" \"vite --host 0.0.0.0\"",
+    "start": "tsx src/index.ts",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "mysql2": "^3.16.1",
+    "react": "16.8.6",
+    "react-bootstrap": "1.0.0-beta.9",
+    "react-dom": "16.8.6",
     "sqlite3": "^5.1.7",
     "uuid": "^13.0.0",
     "wait-port": "^1.1.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^16.8.0",
+    "@types/react-dom": "^16.8.0",
+    "@types/sqlite3": "^3.1.11",
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.0.0",
+    "ts-jest": "^29.4.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
     "@commitlint/cli": "^21.2.2",
     "@commitlint/config-conventional": "^21.2.2",
     "jest": "^30.5.1",

@@ -1,4 +1,5 @@
 const db = require('../../src/persistence');
+export {};
 const deleteItem = require('../../src/routes/deleteItem');
 const ITEM = { id: 12345 };
 

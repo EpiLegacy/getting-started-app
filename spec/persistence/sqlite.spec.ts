@@ -1,11 +1,14 @@
-require('dotenv').config();
-
-const db = require('../../src/persistence/sqlite');
+export {};
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const location = process.env.SQLITE_DB_LOCATION || '/etc/todos/todo.db';
+const previousLocation = process.env.SQLITE_DB_LOCATION;
+const previousNodeEnv = process.env.NODE_ENV;
+const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-test-'));
+const location = path.join(testRoot, 'todo.db');
+process.env.SQLITE_DB_LOCATION = location;
+const db = require('../../src/persistence/sqlite');
 
 const ITEM = {
     id: '7aef3d7c-d301-4846-8358-2a91ec9d6be3',
@@ -20,9 +23,20 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    process.env.SQLITE_DB_LOCATION = location;
+    process.env.NODE_ENV = previousNodeEnv;
     jest.restoreAllMocks();
     jest.dontMock('sqlite3');
     jest.resetModules();
+});
+
+afterAll(() => {
+    if (previousLocation === undefined) {
+        delete process.env.SQLITE_DB_LOCATION;
+    } else {
+        process.env.SQLITE_DB_LOCATION = previousLocation;
+    }
+    fs.rmSync(testRoot, { recursive: true, force: true });
 });
 
 test('it initializes correctly', async () => {
@@ -31,10 +45,7 @@ test('it initializes correctly', async () => {
 });
 
 test('it can create directory if do not exist', async () => {
-    const testDir = path.join(
-        os.tmpdir(),
-        `todo-test-${Date.now()}`
-    );
+    const testDir = path.join(testRoot, 'nested');
     const dbPath = path.join(testDir, 'todo.db');
 
     process.env.SQLITE_DB_LOCATION = dbPath;
@@ -71,6 +82,9 @@ test('it can store and retrieve items', async () => {
 
 test('it can update an existing item', async () => {
     await db.init();
+
+    const initialItems = await db.getItems();
+    expect(initialItems.length).toBe(0);
 
     await db.storeItem(ITEM);
 
@@ -412,6 +426,7 @@ test('it uses the default database location when SQLITE_DB_LOCATION is not defin
 
     const database = require('../../src/persistence/sqlite');
 
+    jest.spyOn(fs, 'existsSync').mockReturnValue(true);
     await database.init();
 
     expect(Database).toHaveBeenCalledWith(
