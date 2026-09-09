@@ -45,7 +45,8 @@ export function startOutboxRelay(
         } catch (error) {
             // Never let the loop die: the batch stays unpublished and the next
             // tick retries it.
-            console.error('[outbox] relay tick failed', error);
+            const reason = error instanceof Error ? error.message : String(error);
+            console.error(`[outbox] relay tick failed: ${reason}`);
         } finally {
             if (!stopped) timer = setTimeout(tick, intervalMs);
         }

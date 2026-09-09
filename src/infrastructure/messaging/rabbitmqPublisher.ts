@@ -49,12 +49,17 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
  */
 export class RabbitmqPublisher implements EventPublisher {
     private channel: ConfirmChannel | undefined;
+    private pendingChannel: Promise<ConfirmChannel> | undefined;
 
     private constructor(private readonly model: RecoveringChannelModel) {}
 
     static async create(url: string = rabbitmqUrl()): Promise<RabbitmqPublisher> {
         const model = await connect(url, {
             recovery: {
+                // amqplib defaults to a 30s ceiling, which means up to half a
+                // minute of downtime after the broker is already back. A 5s cap
+                // keeps recovery close to the broker's own restart time.
+                maxDelay: 5_000,
                 // Runs after every successful connection: a broker that came
                 // back empty gets its exchanges and queues re-declared.
                 setup: async (connected: ChannelModel) => {
@@ -75,19 +80,33 @@ export class RabbitmqPublisher implements EventPublisher {
         return new RabbitmqPublisher(model);
     }
 
-    private async acquireChannel(): Promise<ConfirmChannel> {
-        if (this.channel) return this.channel;
+    private acquireChannel(): Promise<ConfirmChannel> {
+        if (this.channel) return Promise.resolve(this.channel);
 
-        // Resolves once the recovering model holds a live connection.
-        const channel = await this.model.createConfirmChannel();
-        const forget = (): void => {
-            if (this.channel === channel) this.channel = undefined;
-        };
-        channel.on('close', forget);
-        channel.on('error', forget);
+        // A publish that times out abandons its wait but cannot cancel it, so
+        // the in-flight request is shared: repeated attempts queue behind one
+        // channel creation instead of stacking up new ones.
+        if (!this.pendingChannel) {
+            // Resolves once the recovering model holds a live connection.
+            this.pendingChannel = this.model
+                .createConfirmChannel()
+                .then(channel => {
+                    const forget = (): void => {
+                        if (this.channel === channel) this.channel = undefined;
+                    };
+                    channel.on('close', forget);
+                    channel.on('error', forget);
 
-        this.channel = channel;
-        return channel;
+                    this.channel = channel;
+                    this.pendingChannel = undefined;
+                    return channel;
+                })
+                .catch((error: unknown) => {
+                    this.pendingChannel = undefined;
+                    throw error;
+                });
+        }
+        return this.pendingChannel;
     }
 
     async publish(event: EventEnvelope): Promise<void> {

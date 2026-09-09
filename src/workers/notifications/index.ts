@@ -20,6 +20,9 @@ async function main(): Promise<void> {
     // alive but subscribed to nothing - a silent zombie, worse than a crash.
     const model = await connect(rabbitmqUrl(), {
         recovery: {
+            // Matches the publisher: recovery close to the broker's restart
+            // time rather than amqplib's 30s default ceiling.
+            maxDelay: 5_000,
             setup: async (connected: ChannelModel) => {
                 const channel = await connected.createChannel();
                 await assertTopology(channel);
