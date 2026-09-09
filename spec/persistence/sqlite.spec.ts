@@ -55,7 +55,6 @@ test('it can create directory if do not exist', async () => {
     delete process.env.SQLITE_DB_LOCATION;
 
     fs.rmSync(testDir, { recursive: true, force: true });
-});
 
 test('it can store and retrieve items', async () => {
     await db.init();
@@ -72,6 +71,9 @@ test('it can store and retrieve items', async () => {
 
 test('it can update an existing item', async () => {
     await db.init();
+
+    const initialItems = await db.getItems();
+    expect(initialItems.length).toBe(0);
 
     await db.storeItem(ITEM);
 
