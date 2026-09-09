@@ -430,7 +430,7 @@ test('it uses the default database location when SQLITE_DB_LOCATION is not defin
     await database.init();
 
     expect(Database).toHaveBeenCalledWith(
-        '/etc/todos/todo.db',
+        path.resolve('data', 'todo.db'),
         expect.any(Function),
     );
 
