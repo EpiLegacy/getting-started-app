@@ -1,0 +1,66 @@
+﻿version	global_sql_mode	session_sql_mode	charset	collation	isolation
+8.4.11	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION	utf8mb4	utf8mb4_0900_ai_ci	REPEATABLE-READ
+Tables_in_todos
+notifications
+outbox_events
+processed_events
+todo_items
+*************************** 1. row ***************************
+       Table: todo_items
+Create Table: CREATE TABLE `todo_items` (
+  `id` varchar(36) DEFAULT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `completed` tinyint(1) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+*************************** 1. row ***************************
+       Table: outbox_events
+Create Table: CREATE TABLE `outbox_events` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `event_id` char(36) NOT NULL,
+  `type` varchar(120) NOT NULL,
+  `version` int unsigned NOT NULL,
+  `aggregate_id` varchar(64) NOT NULL,
+  `correlation_id` varchar(64) NOT NULL,
+  `actor_id` varchar(64) DEFAULT NULL,
+  `occurred_at` datetime(3) NOT NULL,
+  `payload` json NOT NULL,
+  `published_at` datetime(3) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `event_id` (`event_id`),
+  KEY `idx_outbox_unpublished` (`published_at`,`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=23 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+*************************** 1. row ***************************
+       Table: notifications
+Create Table: CREATE TABLE `notifications` (
+  `id` char(36) NOT NULL,
+  `recipient_id` varchar(64) NOT NULL,
+  `type` varchar(120) NOT NULL,
+  `body` varchar(500) NOT NULL,
+  `read_at` datetime(3) DEFAULT NULL,
+  `created_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_notifications_recipient` (`recipient_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+*************************** 1. row ***************************
+       Table: processed_events
+Create Table: CREATE TABLE `processed_events` (
+  `event_id` char(36) NOT NULL,
+  `handler` varchar(120) NOT NULL,
+  `processed_at` datetime(3) NOT NULL,
+  PRIMARY KEY (`event_id`,`handler`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+total	empty_ids	null_names	null_completed	longest_name
+4	0	0	0	8
+duplicated_ids
+0
+user	host
+root	%
+todo	%
+root	localhost
+Grants for root@localhost
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, RELOAD, SHUTDOWN, PROCESS, FILE, REFERENCES, INDEX, ALTER, SHOW DATABASES, SUPER, CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, REPLICATION SLAVE, REPLICATION CLIENT, CREATE VIEW, SHOW VIEW, CREATE ROUTINE, ALTER ROUTINE, CREATE USER, EVENT, TRIGGER, CREATE TABLESPACE, CREATE ROLE, DROP ROLE ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT ALLOW_NONEXISTENT_DEFINER,APPLICATION_PASSWORD_ADMIN,AUDIT_ABORT_EXEMPT,AUDIT_ADMIN,AUTHENTICATION_POLICY_ADMIN,BACKUP_ADMIN,BINLOG_ADMIN,BINLOG_ENCRYPTION_ADMIN,CLONE_ADMIN,CONNECTION_ADMIN,ENCRYPTION_KEY_ADMIN,FIREWALL_EXEMPT,FLUSH_OPTIMIZER_COSTS,FLUSH_PRIVILEGES,FLUSH_STATUS,FLUSH_TABLES,FLUSH_USER_RESOURCES,GROUP_REPLICATION_ADMIN,GROUP_REPLICATION_STREAM,INNODB_REDO_LOG_ARCHIVE,INNODB_REDO_LOG_ENABLE,OPTIMIZE_LOCAL_TABLE,PASSWORDLESS_USER_ADMIN,PERSIST_RO_VARIABLES_ADMIN,REPLICATION_APPLIER,REPLICATION_SLAVE_ADMIN,RESOURCE_GROUP_ADMIN,RESOURCE_GROUP_USER,ROLE_ADMIN,SENSITIVE_VARIABLES_OBSERVER,SERVICE_CONNECTION_ADMIN,SESSION_VARIABLES_ADMIN,SET_ANY_DEFINER,SHOW_ROUTINE,SYSTEM_USER,SYSTEM_VARIABLES_ADMIN,TABLE_ENCRYPTION_ADMIN,TELEMETRY_LOG_ADMIN,TRANSACTION_GTID_TAG,XA_RECOVER_ADMIN ON *.* TO `root`@`localhost` WITH GRANT OPTION
+GRANT PROXY ON ``@`` TO `root`@`localhost` WITH GRANT OPTION
+Grants for todo@%
+GRANT USAGE ON *.* TO `todo`@`%`
+GRANT ALL PRIVILEGES ON `todos`.* TO `todo`@`%`
