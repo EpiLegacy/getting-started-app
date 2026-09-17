@@ -218,10 +218,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.image.outputs.name }}
-          # "latest" for humans, the full commit SHA for everything else: an
-          # immutable tag is what lets a deployment be traced back to a commit.
+          # "edge" is the tip of main: always pullable, never a version.
+          # "latest" belongs to the release workflow, so that a plain
+          # "docker pull" returns something that was actually released.
+          # The full commit SHA is the immutable tag a deployment pins to.
           tags: |
-            type=raw,value=latest
+            type=raw,value=edge
             type=sha,format=long
 
       - name: Build and push
