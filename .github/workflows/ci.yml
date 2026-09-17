@@ -2,12 +2,12 @@ name: CI
 
 on:
   pull_request:
-    # « edited » permet de revérifier le titre de la PR quand il est corrigé.
+    # "edited" re-runs the checks when the pull request title is corrected.
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
-# Une seule exécution utile par branche : les runs obsolètes sont annulés.
+# One useful run per branch: superseded runs are cancelled.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -17,13 +17,13 @@ permissions:
 
 jobs:
   commitlint:
-    name: Convention de commit
+    name: Commit convention
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # commitlint compare une plage de commits : il lui faut tout l'historique.
+          # commitlint lints a range of commits: it needs the whole history.
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -33,20 +33,37 @@ jobs:
 
       - run: npm ci
 
-      - name: Vérifier les commits de la pull request
+      - name: Lint the commits
         run: >
           npx commitlint
           --from "${{ github.event.pull_request.base.sha }}"
           --to "${{ github.event.pull_request.head.sha }}"
           --verbose
 
-      # Le titre de la PR devient le message de commit en cas de merge « squash ».
-      # Il est passé par une variable d'environnement, jamais interpolé dans le
-      # shell : c'est un texte libre écrit par un utilisateur.
-      - name: Vérifier le titre de la pull request
+      # The title becomes the commit message on a squash merge, so it has to
+      # follow the convention too. It travels through an environment variable
+      # and is never interpolated into the shell: it is free text.
+      - name: Lint the pull request title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: printf '%s\n' "$PR_TITLE" | npx commitlint --verbose
+
+  typecheck:
+    name: Types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # tsc --noEmit. The Vite bundler strips types without checking them, so
+      # without this job nothing in the pipeline would ever read them.
+      - run: npm run typecheck
 
   lint:
     name: Lint
@@ -61,7 +78,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Détecter le script npm « lint »
+      - name: Look for a "lint" npm script
         id: script
         run: |
           if node -e "process.exit((require('./package.json').scripts || {}).lint ? 0 : 1)"; then
@@ -74,10 +91,10 @@ jobs:
         if: steps.script.outputs.present == 'true'
         run: npm run lint
 
-      - name: Aucun linter configuré
+      - name: No linter configured
         if: steps.script.outputs.present == 'false'
         run: |
-          echo "::warning title=Linter absent::Aucun script \"lint\" dans package.json. Ce job devient bloquant automatiquement dès que le script existe."
+          echo "::warning title=No linter::No \"lint\" script in package.json. This job turns blocking on its own as soon as one is added."
 
   test:
     name: Tests
@@ -92,20 +109,153 @@ jobs:
 
       - run: npm ci
 
-      - name: Détecter le script npm « test »
-        id: script
+      - run: npm test
+
+      # jest.config.cjs already collects coverage. Keeping the report makes it
+      # reviewable, which condition 3 of the Definition of Done asks for.
+      - name: Keep the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: warn
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The two halves the Docker image ships, built the same way it builds
+      # them: the backend compiled to build/, the frontend bundled to dist/.
+      - name: Compile the backend
+        run: npx tsc -p tsconfig.build.json
+
+      - name: Bundle the frontend
+        run: npm run build
+
+      # Condition 6 of the Definition of Done asks for build artefacts.
+      - name: Publish the build artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artefacts
+          path: |
+            build/
+            dist/
+          if-no-files-found: error
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # sqlite3 has no prebuilt binary for Node 24 and compiles from source,
+      # which costs about three minutes cold. The GitHub Actions cache brings
+      # later runs down to seconds as long as the dependencies do not move.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: legacy-kanban:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Building proves it compiles. Only starting it proves it runs.
+      - name: Smoke test the image
         run: |
-          if node -e "process.exit((require('./package.json').scripts || {}).test ? 0 : 1)"; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
+          docker run -d --name smoke -p 3000:3000 legacy-kanban:ci
+          # --retry-connrefused alone is not enough: docker publishes the host
+          # port as soon as the container starts, so a request sent before the
+          # server listens is reset rather than refused, and curl treats a
+          # reset as a non-retryable error unless --retry-all-errors is set.
+          if ! curl -fsS --retry 20 --retry-delay 2 --retry-connrefused --retry-all-errors http://127.0.0.1:3000/items; then
+            echo "::error title=Image unusable::The container did not answer on /items."
+            docker logs smoke
+            exit 1
           fi
+          echo
+          echo "Image answered on /items."
 
-      - name: npm test
-        if: steps.script.outputs.present == 'true'
-        run: npm test
+      - name: Container logs
+        if: always()
+        run: docker logs smoke 2>&1 || true
 
-      - name: Aucun test exécutable
-        if: steps.script.outputs.present == 'false'
+      - name: Stop the container
+        if: always()
+        run: docker rm -f smoke || true
+
+  publish:
+    name: Publish the image
+    # Only from main, and only once every other job agrees. A published image
+    # must correspond to a state the pipeline actually validated.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [typecheck, lint, test, build, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Granted on this job alone rather than at workflow level, so that no
+      # job running on a pull request can ever write to the registry.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR rejects uppercase names and the organisation is spelled
+      # "EpiLegacy", so github.repository cannot be used as is.
+      - name: Build the image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          # "latest" for humans, the full commit SHA for everything else: an
+          # immutable tag is what lets a deployment be traced back to a commit.
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Without this, buildx adds a provenance manifest that GHCR displays
+          # as a second "unknown/unknown" architecture on the package page.
+          provenance: false
+
+      - name: Report what was published
         run: |
-          echo "::warning title=Tests absents::Les specs de spec/ existent mais aucun script \"test\" n'est défini (issue #5). Ce job devient bloquant automatiquement dès que le script existe."
+          {
+            echo "### Image published"
+            echo
+            printf '%s\n' '${{ steps.meta.outputs.tags }}' | sed 's/^/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"

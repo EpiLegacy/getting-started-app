@@ -8,7 +8,7 @@ interface DbRow {
     name: unknown;
     completed: number;
 }
-const location = process.env.SQLITE_DB_LOCATION || '/etc/todos/todo.db';
+const location = process.env.SQLITE_DB_LOCATION || require('path').resolve('data', 'todo.db');
 
 let db: import('sqlite3').Database;
 
