@@ -8,7 +8,8 @@
     "dev": "concurrently \"nodemon -L --exec tsx src/index.ts\" \"vite --host 0.0.0.0\"",
     "start": "tsx src/index.ts",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:merge-sqlite": "tsx src/scripts/mergeSqliteIntoMysql/index.ts"
   },
   "dependencies": {
     "amqplib": "^2.0.1",
