@@ -15,6 +15,7 @@ coverage/
 .github/
 spec/
 jest.config.cjs
+jest.integration.config.cjs
 commitlint.config.mts
 
 # Container tooling.
