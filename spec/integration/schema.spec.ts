@@ -33,10 +33,25 @@ const PRODUCTION = {
 };
 
 const db = require('../../src/persistence');
+// Mirrors src/persistence/index.ts's own default.
+const driver = process.env.PERSISTENCE_DRIVER === 'drizzle' ? 'drizzle' : 'legacy';
 let connection: Connection;
 
 beforeAll(async () => {
     connection = await connect();
+});
+
+/**
+ * Both tests below need todo_items to exist beforehand. On
+ * PERSISTENCE_DRIVER=drizzle only a migration creates it — never
+ * src/index.ts itself (ADR 0001: no migration at start-up) — so it is
+ * created here, through the verification connection directly, never through
+ * the application under test.
+ */
+beforeEach(async () => {
+    await connection.query(
+        'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
+    );
 });
 
 afterAll(async () => {
@@ -45,18 +60,33 @@ afterAll(async () => {
     await db.teardown();
 });
 
-test('start-up creates the tables exactly as production has them', async () => {
-    // Test database only (checked by connect): start from nothing.
-    await dropTables(connection);
+(driver === 'legacy' ? test : test.skip)(
+    'start-up creates the tables exactly as production has them',
+    async () => {
+        // Test database only (checked by connect): start from nothing.
+        await dropTables(connection);
 
-    // Start-up order of src/index.ts.
-    await db.init();
-    await ensureEventSchema();
+        // Start-up order of src/index.ts.
+        await db.init();
+        await ensureEventSchema();
 
-    for (const table of TABLES) {
-        expect(await showCreateTable(connection, table)).toBe(PRODUCTION[table as keyof typeof PRODUCTION]);
-    }
-});
+        for (const table of TABLES) {
+            expect(await showCreateTable(connection, table)).toBe(PRODUCTION[table as keyof typeof PRODUCTION]);
+        }
+    },
+);
+
+(driver === 'drizzle' ? test : test.skip)(
+    'start-up never runs a migration',
+    async () => {
+        await dropTables(connection, ['todo_items']);
+
+        await db.init();
+
+        // No CREATE TABLE ran: the column the other tests rely on is still gone.
+        await expect(connection.query('SELECT 1 FROM todo_items')).rejects.toThrow(/doesn't exist/);
+    },
+);
 
 test('a restart leaves existing tables and their rows alone', async () => {
     await connection.execute('INSERT INTO todo_items (id, name, completed) VALUES (?, ?, ?)', ['kept', 'kept', 1]);
