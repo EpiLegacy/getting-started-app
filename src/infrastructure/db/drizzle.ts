@@ -16,6 +16,8 @@ import * as schema from './schema';
  */
 
 type Db = MySql2Database<typeof schema>;
+/** The `tx` argument `db.transaction(async (tx) => ...)` callbacks receive. */
+export type DrizzleTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 let pool: Pool | undefined;
 let db: Db | undefined;
@@ -30,7 +32,14 @@ export function isDrizzleConfigured(): boolean {
     return Boolean(env('MYSQL_HOST'));
 }
 
+/**
+ * Idempotent: the API process calls this once through
+ * src/persistence/drizzle.ts and once more to start the outbox relay, and
+ * the worker process calls it on its own. Every caller shares the one pool.
+ */
 export async function init(): Promise<void> {
+    if (pool) return;
+
     const host = env('MYSQL_HOST');
     const port = env('MYSQL_PORT') ? Number(env('MYSQL_PORT')) : 3306;
 
@@ -71,6 +80,11 @@ export async function teardown(): Promise<void> {
     }
 }
 
+/** `db.transaction()` with the same error-unwrapping every other call gets. */
+export async function transaction<T>(fn: (tx: DrizzleTx) => Promise<T>): Promise<T> {
+    return unwrapErrors(() => getDb().transaction(fn));
+}
+
 /**
  * Drizzle wraps every driver failure in its own `DrizzleQueryError`, with the
  * raw mysql2 error (`.code`, `.errno`, `.sqlMessage`) moved to `.cause`. The
@@ -84,7 +98,18 @@ export async function unwrapErrors<T>(fn: () => Promise<T>): Promise<T> {
     try {
         return await fn();
     } catch (error) {
-        if (error instanceof Error && error.cause instanceof Error) throw error.cause;
-        throw error;
+        throw unwrapError(error);
     }
+}
+
+/**
+ * The single-error version of unwrapErrors(), for code that must inspect
+ * `.code` on a specific call inside a transaction — e.g.
+ * src/workers/notifications/handler.drizzle.ts checking for a duplicate key
+ * — before deciding whether to swallow it or let it propagate (which then
+ * reaches unwrapErrors() again, harmlessly: it leaves an already-unwrapped
+ * error alone).
+ */
+export function unwrapError(error: unknown): unknown {
+    return error instanceof Error && error.cause instanceof Error ? error.cause : error;
 }

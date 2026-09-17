@@ -1,14 +1,26 @@
-import type { Connection, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { Connection, RowDataPacket } from 'mysql2/promise';
 import { ZodError } from 'zod';
-import { closePool, ensureEventSchema, getPool, withTransaction } from '../../src/infrastructure/db/mysql';
-import * as outboxRepository from '../../src/infrastructure/outbox/outboxRepository';
-import { claimBatch, enqueue, markPublished, type PendingEvent } from '../../src/infrastructure/outbox/outboxRepository';
-import { startOutboxRelay, type RunningRelay } from '../../src/infrastructure/outbox/relay';
-import { updateTask } from '../../src/modules/tasks/application/updateTask';
+import { closePool, ensureEventSchema } from '../../src/infrastructure/db/mysql';
+import { teardown as teardownDrizzlePool } from '../../src/infrastructure/db/drizzle';
 import { TASK_COMPLETED } from '../../src/shared/events/catalog';
 import { createEvent, type EventEnvelope } from '../../src/shared/events/envelope';
 import type { EventPublisher } from '../../src/shared/events/publisher';
-import { HANDLER_NAME, handleTaskEvent } from '../../src/workers/notifications/handler';
+import type { RunningRelay } from '../../src/infrastructure/outbox/relay';
+import type { PendingEvent } from '../../src/infrastructure/outbox/outboxRepository';
+// Driver-independent: src/workers/notifications/handler.drizzle.ts reuses
+// this same constant rather than redefining it.
+import { HANDLER_NAME } from '../../src/workers/notifications/handler';
+import {
+    claimBatch,
+    enqueue,
+    handleTaskEvent,
+    markPublished,
+    openHeldTransaction,
+    outboxRepositoryModule,
+    startOutboxRelay,
+    updateTask,
+    withTransaction,
+} from './support/outboxDriver';
 import { gate, sleep, stateAfter, waitUntil } from './support/async';
 import {
     connect,
@@ -26,12 +38,19 @@ import {
  * the same event, delivery is at least once, and the worker applies an event
  * once. Tests titled "current behaviour, to be fixed" pin a real but unwanted
  * behaviour.
+ *
+ * Runs against the active PERSISTENCE_DRIVER implementation (support/
+ * outboxDriver.ts): legacy by default, or the Drizzle one (ADR 0001, lot 4)
+ * with PERSISTENCE_DRIVER=drizzle. Locking is asserted through raw
+ * connections (support/database.ts's `connect()`) rather than through
+ * either implementation, since InnoDB's locks are a property of the rows,
+ * not of whichever query builder took them.
  */
 
 // Loaded like src/index.ts does, to create todo_items the way the app does.
 const db = require('../../src/persistence');
 
-const realEnqueue = outboxRepository.enqueue;
+const realEnqueue = outboxRepositoryModule.enqueue;
 let connection: Connection;
 
 beforeAll(async () => {
@@ -51,6 +70,7 @@ afterEach(() => {
 afterAll(async () => {
     await connection?.end();
     await closePool();
+    await teardownDrizzlePool();
     await db.teardown();
 });
 
@@ -81,8 +101,8 @@ async function seedEvents(count: number): Promise<EventEnvelope[]> {
 function holdUpdateTaskAfterEnqueue(): { reached: Promise<void>; release(): void } {
     const reached = gate();
     const released = gate();
-    jest.spyOn(outboxRepository, 'enqueue').mockImplementationOnce(async (tx, event) => {
-        await realEnqueue(tx, event);
+    jest.spyOn(outboxRepositoryModule, 'enqueue').mockImplementationOnce(async (tx, event) => {
+        await realEnqueue(tx as never, event);
         reached.open();
         await released.promise;
     });
@@ -130,8 +150,8 @@ describe('updateTask', () => {
 
     test('a failure after both writes rolls both back', async () => {
         await insertTodoRows(connection, [[TASK, 'Write tests', 0]]);
-        jest.spyOn(outboxRepository, 'enqueue').mockImplementationOnce(async (tx, event) => {
-            await realEnqueue(tx, event);
+        jest.spyOn(outboxRepositoryModule, 'enqueue').mockImplementationOnce(async (tx, event) => {
+            await realEnqueue(tx as never, event);
             throw new Error('crash between the event insert and the commit');
         });
 
@@ -254,16 +274,9 @@ describe('claimBatch and markPublished', () => {
 
     test('two relays holding claims at the same time get disjoint batches, without waiting', async () => {
         const events = await seedEvents(6);
-        const relays: PoolConnection[] = [];
+        const held = [openHeldTransaction(), openHeldTransaction(), openHeldTransaction()];
         try {
-            for (let index = 0; index < 3; index++) {
-                const relay = await getPool().getConnection();
-                relays.push(relay);
-                // A lock wait would fail after 1s instead of hanging.
-                await relay.query('SET SESSION innodb_lock_wait_timeout = 1');
-                await relay.beginTransaction();
-            }
-            const [first, second, third] = relays;
+            const [first, second, third] = await Promise.all(held.map(h => h.ready));
 
             const firstBatch = await claimBatch(first, 3);
             const secondBatch = await claimBatch(second, 3);
@@ -273,11 +286,7 @@ describe('claimBatch and markPublished', () => {
             expect(eventIds(secondBatch)).toEqual(events.slice(3).map(event => event.eventId));
             expect(thirdBatch).toEqual([]);
         } finally {
-            for (const relay of relays) {
-                await relay.rollback();
-                await relay.query('SET SESSION innodb_lock_wait_timeout = DEFAULT');
-                relay.release();
-            }
+            await Promise.all(held.map(h => h.release()));
         }
     });
 
@@ -338,11 +347,13 @@ describe('claimBatch and markPublished', () => {
         const before = Date.now();
 
         await withTransaction(tx => markPublished(tx, [rows[0].id, rows[2].id]));
-        await withTransaction(async tx => {
-            const query = jest.spyOn(tx, 'query');
-            await markPublished(tx, []);
-            expect(query).not.toHaveBeenCalled();
-        });
+        // Both implementations return before running any SQL when `ids` is
+        // empty (outboxRepository[.drizzle].ts): proven here by the rows
+        // being byte-identical before and after, not by inspecting the
+        // connection, which the two drivers do not expose the same way.
+        const untouched = await selectOutboxRows(connection);
+        await withTransaction(tx => markPublished(tx, []));
+        expect(await selectOutboxRows(connection)).toEqual(untouched);
 
         const after = await selectOutboxRows(connection);
         expect(after.map(row => row.published_at === null)).toEqual([false, true, false]);

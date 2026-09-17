@@ -7,8 +7,11 @@ const addItem = require('./routes/addItem');
 const updateItem = require('./routes/updateItem');
 const deleteItem = require('./routes/deleteItem');
 import { closePool, ensureEventSchema, isMysqlConfigured } from './infrastructure/db/mysql';
+import { init as initDrizzlePool } from './infrastructure/db/drizzle';
 import { RabbitmqPublisher } from './infrastructure/messaging/rabbitmqPublisher';
 import { startOutboxRelay, type RunningRelay } from './infrastructure/outbox/relay';
+import { startOutboxRelay as startOutboxRelayDrizzle } from './infrastructure/outbox/relay.drizzle';
+import { resolvePersistenceDriver } from './shared/persistenceDriver';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
@@ -31,7 +34,15 @@ async function startEventing(): Promise<void> {
     }
     await ensureEventSchema();
     publisher = await RabbitmqPublisher.create();
-    relay = startOutboxRelay(publisher);
+    if (resolvePersistenceDriver() === 'drizzle') {
+        // Idempotent: already initialised by db.init() above when
+        // PERSISTENCE_DRIVER=drizzle, so this only matters if that order
+        // ever changes.
+        await initDrizzlePool();
+        relay = startOutboxRelayDrizzle(publisher);
+    } else {
+        relay = startOutboxRelay(publisher);
+    }
     console.log('Outbox relay started');
 }
 
