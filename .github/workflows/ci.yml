@@ -99,6 +99,31 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    # Disposable database for spec/integration. It lives as long as the job
+    # and is only reachable from the runner.
+    services:
+      mysql:
+        # The image docker-compose.yml runs.
+        image: mysql:8.4
+        # Not secrets: these values only open this throwaway container. A
+        # random root password would be worse: the image prints it, and the
+        # service logs end up in the job log. The tests never use root.
+        env:
+          MYSQL_ROOT_PASSWORD: ci-throwaway-root-password
+          MYSQL_DATABASE: todos_test
+          MYSQL_USER: todo_test
+          MYSQL_PASSWORD: ci-throwaway-password
+        ports:
+          - 3306:3306
+        # "-h 127.0.0.1" forces TCP: the image's first-start bootstrap server
+        # only listens on its socket, so the check passes once the real server
+        # accepts connections.
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
     steps:
       - uses: actions/checkout@v4
 
@@ -111,8 +136,21 @@ jobs:
 
       - run: npm test
 
-      # jest.config.cjs already collects coverage. Keeping the report makes it
-      # reviewable, which condition 3 of the Definition of Done asks for.
+      # Blocking like the unit tests, and run even when they fail so that one
+      # push reports both. Only this step gets the MYSQL_* variables: the unit
+      # tests must never depend on a database.
+      - name: Integration tests (MySQL 8.4)
+        if: ${{ !cancelled() }}
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_USER: todo_test
+          MYSQL_PASSWORD: ci-throwaway-password
+          MYSQL_DB: todos_test
+        run: npm run test:integration
+
+      # jest.config.cjs already collects coverage, the integration report
+      # included (coverage/integration). Keeping it makes it reviewable, which
+      # condition 3 of the Definition of Done asks for.
       - name: Keep the coverage report
         if: always()
         uses: actions/upload-artifact@v4
