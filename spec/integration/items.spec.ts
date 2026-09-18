@@ -304,6 +304,17 @@ describe('PUT /items/:id', () => {
         expect(await countRows(connection, 'outbox_events')).toBe(0);
     });
 
+    test('answers 404 for an unknown id even without a name', async () => {
+        await insertTodoRows(connection, [[ID, 'Existing', 0]]);
+
+        const res = await request(app).put('/items/unknown-id').send({ completed: true });
+
+        expect(res.status).toBe(404);
+        expect(res.text).toBe('{"error":"Item not found"}');
+        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'Existing', completed: 0 }]);
+        expect(await countRows(connection, 'outbox_events')).toBe(0);
+    });
+
     test('keeps accents and emoji', async () => {
         await insertTodoRows(connection, [[ID, 'plain', 0]]);
         const name = 'Réunion à 14 h ☕️ — 会議';

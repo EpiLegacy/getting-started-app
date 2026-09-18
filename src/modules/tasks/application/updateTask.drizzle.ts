@@ -28,6 +28,12 @@ function nameForUpdate(name: string): unknown {
 
 export async function updateTask(input: UpdateTaskInput): Promise<UpdatedTask | undefined> {
     return transaction(async tx => {
+        // Locked for the duration of the transaction so two concurrent
+        // completions cannot both observe "not completed yet" and emit twice.
+        const rows = await tx.select().from(todoItems).where(eq(todoItems.id, input.id)).for('update');
+        const current = rows[0];
+        if (!current) return undefined;
+
         // input.name is typed as a string but, like the legacy path, carries
         // whatever req.body.name was: mysql2's `.execute()` (what the legacy
         // adapter's UPDATE uses) rejects an undefined bind parameter instead
@@ -35,16 +41,11 @@ export async function updateTask(input: UpdateTaskInput): Promise<UpdatedTask | 
         // behaviour, to be fixed" tests. Drizzle's `.set()` would instead
         // silently drop the column from the UPDATE, leaving the old name in
         // place — a different, quieter outcome — so the same rejection is
-        // reproduced explicitly here.
+        // reproduced explicitly here, at the same point as the legacy one:
+        // after the lookup, so an unknown id still answers 404.
         if (input.name === undefined) {
             throw new TypeError('Bind parameters must not contain undefined. To pass SQL NULL specify JS null');
         }
-
-        // Locked for the duration of the transaction so two concurrent
-        // completions cannot both observe "not completed yet" and emit twice.
-        const rows = await tx.select().from(todoItems).where(eq(todoItems.id, input.id)).for('update');
-        const current = rows[0];
-        if (!current) return undefined;
 
         await tx
             .update(todoItems)
