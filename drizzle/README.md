@@ -25,6 +25,12 @@ every column nullable, `outbox_events`, `notifications`, `processed_events`.
 `todo_items_merge_conflicts` is intentionally absent — production never ran
 the SQLite merge script, so that table does not exist there.
 
+Every baseline `CREATE TABLE` uses `IF NOT EXISTS`. This is required because
+older application versions created some of these tables at startup and MySQL
+auto-commits DDL: an interrupted or mixed-version setup may therefore contain
+only part of the baseline. Re-running `db:migrate` completes that state without
+dropping tables or data, then records the migration normally.
+
 Verified on 2026-09-17 against a throwaway MySQL 8.4.11:
 
 - Applying this migration to an **empty** database and running
@@ -35,44 +41,12 @@ Verified on 2026-09-17 against a throwaway MySQL 8.4.11:
   `No schema changes, nothing to migrate` — proof that `schema.ts` and this
   migration agree.
 
-## Marking the baseline as applied on an existing database, without running it
+## Applying the baseline to an existing database
 
-Production's tables already exist. Running `db:migrate` there unmodified
-would execute `CREATE TABLE todo_items (...)` etc. against tables that are
-already present, and fail. Instead, the migration is recorded as already
-applied, and only the migration is skipped — the data is never touched.
-
-`db:migrate` matches a migration file against a row in `__drizzle_migrations`
-by the SHA-256 hash of the `.sql` file's content (`created_at` records when,
-in epoch milliseconds — used for ordering, not for the match itself). To mark
-`0000_silky_leo.sql` as applied:
-
-```sql
-CREATE TABLE IF NOT EXISTS `__drizzle_migrations` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `hash` text NOT NULL,
-  `created_at` bigint,
-  PRIMARY KEY (`id`)
-);
-
-INSERT INTO `__drizzle_migrations` (hash, created_at)
-VALUES ('<sha256sum of drizzle/0000_silky_leo.sql>', <"when" from drizzle/meta/_journal.json, entry idx 0>);
-```
-
-Both values are printed by:
-
-```bash
-sha256sum drizzle/0000_silky_leo.sql
-node -e "console.log(require('./drizzle/meta/_journal.json').entries[0].when)"
-```
-
-**Verified** on 2026-09-17: a throwaway database was seeded with the exact
-`CREATE TABLE IF NOT EXISTS` statements `src/infrastructure/db/mysql.ts` and
-the legacy `persistence/mysql.ts` run today, plus one row of data. After
-running the SQL above, `npm run db:migrate` reported success without
-attempting to recreate the tables, and the seeded row was still present
-afterwards. This has never been run against the `legacy-kanban` (production)
-database itself — only against a disposable copy of its schema.
+Run `npm run db:migrate` normally. Existing tables and their data are left
+untouched; missing baseline tables are created, and Drizzle records the
+migration after all statements succeed. As with any baseline, first verify
+that an existing production schema matches `src/infrastructure/db/schema.ts`.
 
 ## Rollback
 
