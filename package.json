@@ -12,7 +12,8 @@
     "start": "tsx src/index.ts",
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.integration.config.cjs",
     "test": "jest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:merge-sqlite": "tsx src/scripts/mergeSqliteIntoMysql/index.ts"
   },
   "dependencies": {
     "amqplib": "^2.0.1",
