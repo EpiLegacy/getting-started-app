@@ -15,12 +15,13 @@ coverage/
 .github/
 spec/
 jest.config.cjs
+jest.integration.config.cjs
 commitlint.config.mts
 
 # Container tooling.
 Dockerfile
 .dockerignore
-docker-compose.yml
+docker-compose*.yml
 
 # Secrets and local databases must never reach the daemon.
 .env

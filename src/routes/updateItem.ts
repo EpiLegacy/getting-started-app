@@ -3,6 +3,11 @@ import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { isMysqlConfigured } from '../infrastructure/db/mysql';
 import { updateTask } from '../modules/tasks/application/updateTask';
+import { updateTask as updateTaskDrizzle } from '../modules/tasks/application/updateTask.drizzle';
+import { resolvePersistenceDriver } from '../shared/persistenceDriver';
+
+// require('../persistence') above already validated PERSISTENCE_DRIVER.
+const runUpdateTask = resolvePersistenceDriver() === 'drizzle' ? updateTaskDrizzle : updateTask;
 
 module.exports = async (req: Request, res: Response) => {
     // The event-driven path needs transactions, which only the MySQL adapter
@@ -22,7 +27,7 @@ module.exports = async (req: Request, res: Response) => {
     const header = req.header('x-correlation-id');
     const correlationId = (Array.isArray(header) ? header[0] : header) || randomUUID();
 
-    const updated = await updateTask({
+    const updated = await runUpdateTask({
         id: String(req.params.id),
         name: req.body.name,
         completed: Boolean(req.body.completed),

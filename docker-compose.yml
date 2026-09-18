@@ -22,6 +22,10 @@ services:
       MYSQL_DB: ${MYSQL_DB:-todos}
       # Consumed by the upcoming worker and by the outbox relay.
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      # legacy|drizzle (ADR 0001). Unset here defaults to legacy in the app
+      # itself; run `npm run db:migrate` against this database first if you
+      # switch to drizzle — it never creates tables on its own.
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
     depends_on:
       # Load-bearing, not cosmetic: the MySQL adapter gives up after 10s
       # (waitPort), while the first MySQL 8 startup takes far longer. Without
@@ -49,6 +53,7 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
       MYSQL_DB: ${MYSQL_DB:-todos}
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
     depends_on:
       mysql:
         condition: service_healthy

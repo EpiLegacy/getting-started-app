@@ -1,11 +1,18 @@
 import { connect, type Channel, type ChannelModel, type ConsumeMessage } from 'amqplib';
 import { closePool, ensureEventSchema } from '../../infrastructure/db/mysql';
+import { init as initDrizzlePool, teardown as teardownDrizzlePool } from '../../infrastructure/db/drizzle';
 import { rabbitmqUrl } from '../../infrastructure/messaging/rabbitmqPublisher';
 import { assertTopology, NOTIFICATIONS_QUEUE } from '../../infrastructure/messaging/topology';
 import { eventEnvelopeSchema } from '../../shared/events/envelope';
+import { resolvePersistenceDriver } from '../../shared/persistenceDriver';
 import { handleTaskEvent } from './handler';
+import { handleTaskEvent as handleTaskEventDrizzle } from './handler.drizzle';
 
 const PREFETCH = 10;
+// A separate process from the API: it validates PERSISTENCE_DRIVER on its
+// own instead of relying on src/persistence/index.ts having run first.
+const useDrizzle = resolvePersistenceDriver() === 'drizzle';
+const runHandleTaskEvent = useDrizzle ? handleTaskEventDrizzle : handleTaskEvent;
 
 /**
  * Standalone consumer process. Same image as the API, different command: the
@@ -13,6 +20,7 @@ const PREFETCH = 10;
  */
 async function main(): Promise<void> {
     await ensureEventSchema();
+    if (useDrizzle) await initDrizzlePool();
 
     // The whole consumer setup lives in the recovery hook, which amqplib runs
     // after EVERY successful connection. A channel belongs to the connection
@@ -51,6 +59,7 @@ async function main(): Promise<void> {
         try {
             await model.close();
             await closePool();
+            if (useDrizzle) await teardownDrizzlePool();
         } finally {
             process.exit(0);
         }
@@ -83,7 +92,7 @@ async function onMessage(channel: Channel, message: ConsumeMessage): Promise<voi
     const envelope = parsed.data;
 
     try {
-        const outcome = await handleTaskEvent(envelope);
+        const outcome = await runHandleTaskEvent(envelope);
         console.log(`[worker] ${envelope.type} ${envelope.eventId} -> ${outcome}`);
         channel.ack(message);
     } catch (error) {

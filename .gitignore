@@ -31,3 +31,5 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.swp
+# Reports written by npm run db:merge-sqlite
+merge-report-*.json
