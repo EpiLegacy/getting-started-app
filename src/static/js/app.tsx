@@ -1,6 +1,28 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
-import { Button, Col, Container, Form, InputGroup, Row } from 'react-bootstrap';
+import { createRoot } from 'react-dom/client';
+import AddIcon from '@mui/icons-material/Add';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
+import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import ListAltOutlinedIcon from '@mui/icons-material/ListAltOutlined';
+import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
+import {
+    AppBar,
+    Box,
+    Button,
+    CircularProgress,
+    Container,
+    CssBaseline,
+    IconButton,
+    Paper,
+    Stack,
+    Toolbar,
+    TextField,
+    ThemeProvider,
+    Typography,
+    createTheme,
+} from '@mui/material';
 
 interface Item {
     id: string;
@@ -8,14 +30,126 @@ interface Item {
     completed: boolean;
 }
 
+interface DashboardTodo {
+    id: string;
+    name: string;
+    dueToday: boolean;
+    completed: boolean;
+}
+
+const dashboardTodos: DashboardTodo[] = [
+    { id: '1', name: 'Review the project roadmap', dueToday: true, completed: false },
+    { id: '2', name: 'Prepare notes for the team sync', dueToday: true, completed: false },
+    { id: '3', name: 'Reply to pending messages', dueToday: true, completed: true },
+    { id: '4', name: 'Update the weekly report', dueToday: false, completed: false },
+    { id: '5', name: 'Plan next week’s priorities', dueToday: false, completed: false },
+    { id: '6', name: 'Organize project files', dueToday: false, completed: false },
+    { id: '7', name: 'Book the monthly review', dueToday: false, completed: true },
+    { id: '8', name: 'Read the product feedback', dueToday: false, completed: true },
+];
+
+const theme = createTheme({
+    palette: { background: { default: '#f4f4f4' } },
+    typography: {
+        fontFamily:
+            'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    },
+    shape: { borderRadius: 10 },
+});
+
 function App() {
+    const isTodosPage = window.location.pathname === '/todos';
+
     return (
-        <Container>
-            <Row>
-                <Col md={{ offset: 3, span: 6 }}>
-                    <TodoListCard />
-                </Col>
-            </Row>
+        <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <AppBar position="static" color="inherit" elevation={1}>
+                <Toolbar sx={{ gap: 1 }}>
+                    <Typography variant="h6" fontWeight={700} sx={{ flexGrow: 1 }}>
+                        Todo App
+                    </Typography>
+                    <Button
+                        href="/"
+                        color="inherit"
+                        startIcon={<HomeOutlinedIcon />}
+                        aria-current={!isTodosPage ? 'page' : undefined}
+                    >
+                        Home
+                    </Button>
+                    <Button
+                        href="/todos"
+                        color="inherit"
+                        startIcon={<ListAltOutlinedIcon />}
+                        aria-current={isTodosPage ? 'page' : undefined}
+                    >
+                        Todos
+                    </Button>
+                </Toolbar>
+            </AppBar>
+            {isTodosPage ? <TodosPage /> : <HomePage />}
+        </ThemeProvider>
+    );
+}
+
+function HomePage() {
+    const dueToday = dashboardTodos.filter(todo => todo.dueToday);
+    const unresolvedCount = 0
+
+    return (
+        <Container maxWidth="md" sx={{ py: { xs: 4, sm: 6 } }}>
+            <Stack spacing={4}>
+                <Box>
+                    <Typography component="h1" variant="h3" fontWeight={700} gutterBottom>
+                        Welcome back!
+                    </Typography>
+                    <Typography color="text.secondary" variant="h6">
+                        Here’s a quick look at what needs your attention today.
+                    </Typography>
+                </Box>
+
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3}>
+                    <Paper sx={{ p: 3, flex: 2 }} elevation={2}>
+                        <Stack direction="row" alignItems="center" spacing={1} mb={2}>
+                            <TodayOutlinedIcon color="primary" />
+                            <Typography component="h2" variant="h6" fontWeight={700}>
+                                Due today
+                            </Typography>
+                        </Stack>
+                        <Stack spacing={1.5}>
+                            WIP
+                        </Stack>
+                    </Paper>
+
+                    <Paper sx={{ p: 3, flex: 1 }} elevation={2}>
+                        <Typography color="text.secondary" gutterBottom>
+                            Unresolved todos
+                        </Typography>
+                        <Typography variant="h3" fontWeight={700} color="primary">
+                            {unresolvedCount}
+                            <Typography component="span" variant="h6" color="text.secondary">
+                                {' '}of {dashboardTodos.length}
+                            </Typography>
+                        </Typography>
+                        <Typography color="text.secondary" mt={1}>
+                            todos still need to be completed
+                        </Typography>
+                        <Button href="/todos" variant="outlined" sx={{ mt: 3 }}>
+                            View all todos
+                        </Button>
+                    </Paper>
+                </Stack>
+            </Stack>
+        </Container>
+    );
+}
+
+function TodosPage() {
+    return (
+        <Container maxWidth="sm" sx={{ py: { xs: 4, sm: 6 } }}>
+            <Typography component="h1" variant="h4" fontWeight={700} mb={3}>
+                Todo list
+            </Typography>
+            <TodoListCard />
         </Container>
     );
 }
@@ -29,40 +163,39 @@ function TodoListCard() {
             .then(setItems);
     }, []);
 
-    const onNewItem = React.useCallback(
-        (newItem: Item) => {
-            setItems([...items!, newItem]);
-        },
-        [items],
-    );
+    const onNewItem = React.useCallback((newItem: Item) => {
+        setItems(currentItems => [...(currentItems ?? []), newItem]);
+    }, []);
 
-    const onItemUpdate = React.useCallback(
-        (item: Item) => {
-            const index = items!.findIndex(i => i.id === item.id);
-            setItems([
-                ...items!.slice(0, index),
-                item,
-                ...items!.slice(index + 1),
-            ]);
-        },
-        [items],
-    );
+    const onItemUpdate = React.useCallback((item: Item) => {
+        setItems(currentItems =>
+            currentItems?.map(currentItem =>
+                currentItem.id === item.id ? item : currentItem,
+            ) ?? [],
+        );
+    }, []);
 
-    const onItemRemoval = React.useCallback(
-        (item: Item) => {
-            const index = items!.findIndex(i => i.id === item.id);
-            setItems([...items!.slice(0, index), ...items!.slice(index + 1)]);
-        },
-        [items],
-    );
+    const onItemRemoval = React.useCallback((item: Item) => {
+        setItems(currentItems =>
+            currentItems?.filter(currentItem => currentItem.id !== item.id) ?? [],
+        );
+    }, []);
 
-    if (items === null) return <React.Fragment>Loading...</React.Fragment>;
+    if (items === null) {
+        return (
+            <Box display="flex" justifyContent="center" py={6}>
+                <CircularProgress aria-label="Loading items" />
+            </Box>
+        );
+    }
 
     return (
-        <React.Fragment>
+        <Stack spacing={2}>
             <AddItemForm onNewItem={onNewItem} />
             {items.length === 0 && (
-                <p className="text-center">No items yet! Add one above!</p>
+                <Typography color="text.secondary" textAlign="center" py={4}>
+                    No items yet! Add one above!
+                </Typography>
             )}
             {items.map(item => (
                 <ItemDisplay
@@ -72,7 +205,7 @@ function TodoListCard() {
                     onItemRemoval={onItemRemoval}
                 />
             ))}
-        </React.Fragment>
+        </Stack>
     );
 }
 
@@ -81,7 +214,6 @@ interface AddItemFormProps {
 }
 
 function AddItemForm({ onNewItem }: AddItemFormProps) {
-
     const [newItem, setNewItem] = React.useState('');
     const [submitting, setSubmitting] = React.useState(false);
 
@@ -102,29 +234,34 @@ function AddItemForm({ onNewItem }: AddItemFormProps) {
     };
 
     return (
-        <Form onSubmit={submitNewItem}>
-            <InputGroup className="mb-3">
-                <Form.Control
+        <Box component="form" onSubmit={submitNewItem}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <TextField
+                    fullWidth
                     value={newItem}
-                    onChange={e =>
-                        setNewItem((e.target as HTMLInputElement).value)
-                    }
+                    onChange={e => setNewItem(e.target.value)}
                     type="text"
-                    placeholder="New Item"
-                    aria-describedby="basic-addon1"
+                    label="New item"
+                    size="small"
                 />
-                <InputGroup.Append>
-                    <Button
-                        type="submit"
-                        variant="success"
-                        disabled={!newItem.length}
-                        className={submitting ? 'disabled' : ''}
-                    >
-                        {submitting ? 'Adding...' : 'Add Item'}
-                    </Button>
-                </InputGroup.Append>
-            </InputGroup>
-        </Form>
+                <Button
+                    type="submit"
+                    variant="contained"
+                    color="success"
+                    disabled={!newItem.trim().length || submitting}
+                    startIcon={
+                        submitting ? (
+                            <CircularProgress size={16} color="inherit" />
+                        ) : (
+                            <AddIcon />
+                        )
+                    }
+                    sx={{ whiteSpace: 'nowrap' }}
+                >
+                    {submitting ? 'Adding...' : 'Add item'}
+                </Button>
+            </Stack>
+        </Box>
     );
 }
 
@@ -135,7 +272,6 @@ interface ItemDisplayProps {
 }
 
 function ItemDisplay({ item, onItemUpdate, onItemRemoval }: ItemDisplayProps) {
-
     const toggleCompletion = () => {
         fetch(`/items/${item.id}`, {
             method: 'PUT',
@@ -156,43 +292,47 @@ function ItemDisplay({ item, onItemUpdate, onItemRemoval }: ItemDisplayProps) {
     };
 
     return (
-        <Container fluid className={`item ${item.completed && 'completed'}`}>
-            <Row>
-                <Col xs={1} className="text-center">
-                    <Button
-                        className="toggles"
-                        size="sm"
-                        variant="link"
-                        onClick={toggleCompletion}
-                        aria-label={
-                            item.completed
-                                ? 'Mark item as incomplete'
-                                : 'Mark item as complete'
-                        }
-                    >
-                        <i
-                            className={`far ${
-                                item.completed ? 'fa-check-square' : 'fa-square'
-                            }`}
-                        />
-                    </Button>
-                </Col>
-                <Col xs={10} className="name">
+        <Paper elevation={2} sx={{ p: 1.5 }}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+                <IconButton
+                    color="primary"
+                    onClick={toggleCompletion}
+                    aria-label={
+                        item.completed
+                            ? 'Mark item as incomplete'
+                            : 'Mark item as complete'
+                    }
+                >
+                    {item.completed ? (
+                        <CheckBoxIcon />
+                    ) : (
+                        <CheckBoxOutlineBlankIcon />
+                    )}
+                </IconButton>
+                <Typography
+                    flex={1}
+                    sx={{
+                        overflowWrap: 'anywhere',
+                        textDecoration: item.completed ? 'line-through' : 'none',
+                        color: item.completed ? 'text.secondary' : 'text.primary',
+                    }}
+                >
                     {item.name}
-                </Col>
-                <Col xs={1} className="text-center remove">
-                    <Button
-                        size="sm"
-                        variant="link"
-                        onClick={removeItem}
-                        aria-label="Remove Item"
-                    >
-                        <i className="fa fa-trash text-danger" />
-                    </Button>
-                </Col>
-            </Row>
-        </Container>
+                </Typography>
+                <IconButton
+                    color="error"
+                    onClick={removeItem}
+                    aria-label="Remove item"
+                >
+                    <DeleteOutlineIcon />
+                </IconButton>
+            </Stack>
+        </Paper>
     );
 }
 
-ReactDOM.render(<App />, document.getElementById('root'));
+const rootElement = document.getElementById('root');
+
+if (!rootElement) throw new Error('Root element not found');
+
+createRoot(rootElement).render(<App />);
