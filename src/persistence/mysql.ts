@@ -13,6 +13,7 @@ interface DbRow extends RowDataPacket {
 const {
     MYSQL_HOST: HOST,
     MYSQL_HOST_FILE: HOST_FILE,
+    MYSQL_PORT: PORT,
     MYSQL_USER: USER,
     MYSQL_USER_FILE: USER_FILE,
     MYSQL_PASSWORD: PASSWORD,
@@ -31,7 +32,7 @@ async function init(): Promise<void> {
 
     await waitPort({ 
         host, 
-        port: 3306,
+        port: PORT ? Number(PORT) : 3306,
         timeout: 10000,
         waitForDns: true,
     });
@@ -39,6 +40,7 @@ async function init(): Promise<void> {
     pool = mysql.createPool({
         connectionLimit: 5,
         host,
+        port: PORT ? Number(PORT) : undefined,
         user,
         password,
         database,
