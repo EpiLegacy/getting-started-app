@@ -85,7 +85,7 @@ test('the application under test is wired like src/index.ts', () => {
         "app.post('/items', addItem);",
         "app.put('/items/:id', updateItem);",
         "app.delete('/items/:id', deleteItem);",
-        "app.get('/todos', (_req: unknown, res: { sendFile: (file: string) => void }) => {",
+        "app.get('/{*splat}', (_req: unknown, res: { sendFile: (file: string) => void }) => {",
         "app.listen(3000, () => console.log('Listening on port 3000'));",
     ]);
 });

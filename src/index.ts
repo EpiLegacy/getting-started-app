@@ -21,8 +21,8 @@ app.post('/items', addItem);
 app.put('/items/:id', updateItem);
 app.delete('/items/:id', deleteItem);
 
-// Serve the single-page application when a frontend route is opened directly.
-app.get('/todos', (_req: unknown, res: { sendFile: (file: string) => void }) => {
+// Let React Router handle direct visits to any frontend route.
+app.get('/{*splat}', (_req: unknown, res: { sendFile: (file: string) => void }) => {
     res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
