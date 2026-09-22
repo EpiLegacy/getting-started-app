@@ -78,23 +78,9 @@ jobs:
 
       - run: npm ci
 
-      - name: Look for a "lint" npm script
-        id: script
-        run: |
-          if node -e "process.exit((require('./package.json').scripts || {}).lint ? 0 : 1)"; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: npm run lint
-        if: steps.script.outputs.present == 'true'
-        run: npm run lint
-
-      - name: No linter configured
-        if: steps.script.outputs.present == 'false'
-        run: |
-          echo "::warning title=No linter::No \"lint\" script in package.json. This job turns blocking on its own as soon as one is added."
+      # ESLint reports the leftover require() imports as warnings, so the job
+      # only fails on real defects. See eslint.config.mjs.
+      - run: npm run lint
 
   test:
     name: Tests
