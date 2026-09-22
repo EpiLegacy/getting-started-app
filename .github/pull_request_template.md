@@ -1,38 +1,40 @@
 <!--
-Le titre de cette pull request doit suivre Conventional Commits v1.0.0
-(https://www.conventionalcommits.org/en/v1.0.0/), car il devient le message
-de commit en cas de merge « squash ». La CI le vérifie.
+The title of this pull request must follow Conventional Commits v1.0.0
+(https://www.conventionalcommits.org/en/v1.0.0/): it becomes the commit
+message on a squash merge. CI checks it.
 
-Exemple : ci(pipeline): ajouter la vérification des messages de commit
+Example: ci(pipeline): check commit messages
+
+Write the whole pull request in English, like the commits.
 -->
 
-## Objectif
+## Goal
 
-<!-- Ce que fait cette PR, en une ou deux phrases. -->
+<!-- What this pull request does, in one or two sentences. -->
 
 Closes #
 
-## Type de changement
+## Type of change
 
-- [ ] `feat` — nouvelle fonctionnalité
-- [ ] `fix` — correction de bug
-- [ ] `ci` / `build` — pipeline, image, outillage
+- [ ] `feat` — new feature
+- [ ] `fix` — bug fix
+- [ ] `ci` / `build` — pipeline, image, tooling
 - [ ] `docs` — documentation
-- [ ] `refactor` / `perf` / `style` / `test` — sans changement fonctionnel
+- [ ] `refactor` / `perf` / `style` / `test` — no functional change
 
 ## Definition of Done
 
-Cocher chaque point, ou le barrer en expliquant pourquoi il est sans objet.
+Tick each item, or strike it through and say why it does not apply.
 
-- [ ] 1. Revue par au moins une approbation
-- [ ] 2. Tests unitaires sur la logique métier introduite
-- [ ] 3. Niveau de couverture requis atteint
-- [ ] 4. Quality gate passé
-- [ ] 5. Pipeline CI complète au vert
-- [ ] 6. Artefacts de build / image Docker produits
-- [ ] 7. Documentation à jour
-- [ ] 8. Démontrable en Sprint Review
+- [ ] 1. Reviewed, with at least one approval
+- [ ] 2. Unit tests for the business logic introduced
+- [ ] 3. Required coverage level reached
+- [ ] 4. Quality gate passed
+- [ ] 5. Full CI pipeline green
+- [ ] 6. Build artefacts / Docker image produced
+- [ ] 7. Documentation up to date
+- [ ] 8. Demonstrable at the Sprint Review
 
-## Comment vérifier
+## How to verify
 
-<!-- Les étapes qu'un relecteur peut suivre pour constater que ça marche. -->
+<!-- The steps a reviewer can follow to see that it works. -->
