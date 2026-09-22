@@ -1,12 +1,4 @@
-export type Priority = 'high' | 'medium' | 'low';
-
-export interface Item {
-  id: string;
-  name: string;
-  completed: boolean;
-  deadline: string;
-  priorisation: Priority;
-}
+import { Item } from "../../types";
 
 async function request<T>(
   url: string,

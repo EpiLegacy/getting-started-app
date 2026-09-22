@@ -1,13 +1,19 @@
+export type Priority = 'high' | 'medium' | 'low';
+
 export interface Item {
     id: string;
-    name: unknown;
-    completed: unknown;
+    name: string;
+    completed: boolean;
+    deadline: string;
+    priorisation: Priority;
 }
 
 export interface StoredItem {
     id: string;
-    name: unknown;
+    name: string;
     completed: boolean;
+    deadline: string;
+    priorisation: Priority;
 }
 
 export interface Persistence {

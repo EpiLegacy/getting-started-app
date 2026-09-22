@@ -1,5 +1,5 @@
 import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryKey, unique, varchar } from 'drizzle-orm/mysql-core';
-import { Priority } from '../../static/js/api';
+import { Priority } from '../../types';
 
 /**
  * Declares the database exactly as production has it today (captured by

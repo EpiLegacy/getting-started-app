@@ -1,7 +1,20 @@
 import { eq } from 'drizzle-orm';
-import { getDb, init as initDb, teardown as teardownDb, unwrapErrors } from '../infrastructure/db/drizzle';
+
+import {
+    getDb,
+    init as initDb,
+    teardown as teardownDb,
+    unwrapErrors,
+} from '../infrastructure/db/drizzle';
+
 import { todoItems } from '../infrastructure/db/schema';
-import type { Item, Persistence, StoredItem } from '../types';
+
+import type {
+    Item,
+    Persistence,
+    Priority,
+    StoredItem,
+} from '../types';
 
 /**
  * Drizzle implementation of `Persistence`, behind PERSISTENCE_DRIVER=drizzle
@@ -31,28 +44,46 @@ async function teardown(): Promise<void> {
  * effectively coerces NULL to false too (`item.completed === 1`), so this
  * mirrors that instead of leaking `null` through the Persistence interface.
  */
-function toStoredItem(row: { id: string | null; name: string | null; completed: boolean | null }): StoredItem {
-    return { id: row.id as unknown as string, name: row.name, completed: row.completed === true };
+function toStoredItem(row: {
+    id: string | null;
+    name: string | null;
+    completed: boolean | null;
+    deadline: string | null;
+    priorisation: Priority | null;
+}): StoredItem {
+    return {
+        id: row.id ?? '',
+        name: row.name ?? '',
+        completed: row.completed === true,
+        deadline: row.deadline ?? '',
+        priorisation: row.priorisation as Priority,
+    };
 }
 
 /**
- * `undefined` writes SQL NULL, exactly like binding `undefined` to mysql2's
- * `?` placeholder does. Left as Drizzle would default it, `.set()`/`.values()`
- * would instead skip the column entirely — a no-op on UPDATE (the previous
- * value survives) rather than the unconditional overwrite the legacy adapter
- * performs.
+ * Converts undefined values to SQL NULL.
  */
 function nameValue(name: unknown): string | null {
     return (name ?? null) as string | null;
 }
 
 async function getItems(): Promise<StoredItem[]> {
-    const rows = await unwrapErrors(() => getDb().select().from(todoItems));
+    const rows = await unwrapErrors(
+        () => getDb().select().from(todoItems),
+    );
+
     return rows.map(toStoredItem);
 }
 
 async function getItem(id: string): Promise<StoredItem | undefined> {
-    const rows = await unwrapErrors(() => getDb().select().from(todoItems).where(eq(todoItems.id, id)));
+    const rows = await unwrapErrors(
+        () =>
+            getDb()
+                .select()
+                .from(todoItems)
+                .where(eq(todoItems.id, id)),
+    );
+
     return rows.map(toStoredItem)[0];
 }
 
@@ -64,23 +95,43 @@ async function storeItem(item: Item): Promise<void> {
                 id: item.id,
                 name: nameValue(item.name),
                 completed: Boolean(item.completed),
+                deadline: item.deadline,
+                priorisation: item.priorisation,
             }),
     );
 }
 
-async function updateItem(id: string, item: Omit<Item, 'id'>): Promise<void> {
+async function updateItem(
+    id: string,
+    item: Omit<Item, 'id'>,
+): Promise<void> {
     await unwrapErrors(() =>
         getDb()
             .update(todoItems)
-            .set({ name: nameValue(item.name), completed: Boolean(item.completed) })
+            .set({
+                name: nameValue(item.name),
+                completed: Boolean(item.completed),
+                deadline: item.deadline,
+                priorisation: item.priorisation,
+            })
             .where(eq(todoItems.id, id)),
     );
 }
 
 async function removeItem(id: string): Promise<void> {
-    await unwrapErrors(() => getDb().delete(todoItems).where(eq(todoItems.id, id)));
+    await unwrapErrors(
+        () => getDb().delete(todoItems).where(eq(todoItems.id, id)),
+    );
 }
 
-const persistence: Persistence = { init, teardown, getItems, getItem, storeItem, updateItem, removeItem };
+const persistence: Persistence = {
+    init,
+    teardown,
+    getItems,
+    getItem,
+    storeItem,
+    updateItem,
+    removeItem,
+};
 
 export = persistence;

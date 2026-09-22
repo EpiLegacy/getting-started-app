@@ -25,7 +25,8 @@ import AddIcon from '@mui/icons-material/Add';
 
 import './globals.css';
 import React from 'react';
-import { Item, itemsApi, Priority } from './api';
+import { itemsApi } from './api';
+import { Priority, Item } from '../../types';
 
 type SortKey = 'deadline' | 'priorisation';
 
@@ -258,48 +259,31 @@ export default function TodosPage() {
     setPage(0);
   };
 
-  // const handleCheckboxChange = (id: number) => {
-  //     setItems((prevItems) => {
-  //         const updatedItems = prevItems.map((item) =>
-  //             item.id === id
-  //                 ? {
-  //                     ...item,
-  //                     completed: !item.completed,
-  //                 }
-  //                 : item
-  //         );
-
-  //         return [...updatedItems].sort(
-  //             (a, b) => Number(a.completed) - Number(b.completed)
-  //         );
-  //     });
-  // };
-
-  // const handleCheckboxChange = (id: number) => {
-  //     setItems((prevItems) => {
-  //         const updatedItems = prevItems.map(
-  //             (item) =>
-  //                 item.id === id
-  //                     ? {
-  //                         ...item,
-  //                         completed:
-  //                             !item.completed,
-  //                     }
-  //                     : item
-  //         );
-
-  //         return [...updatedItems].sort(
-  //             (a, b) =>
-  //                 Number(a.completed) -
-  //                 Number(b.completed)
-  //         );
-  //     });
-  // };
-
   const handleDeleteItem = (id: string) => {
     itemsApi.remove(id);
     setRefresh(!refresh);
   }
+
+  const handleCheckboxChange = (id: string) => {
+    setItems((prevItems) => {
+      const updatedItems = prevItems.map((item) =>
+        item.id === id
+          ? {
+            ...item,
+            completed: !item.completed,
+          }
+          : item
+      );
+      const updatedItem = updatedItems.find((item) => item.id === id);
+      if (updatedItem) {
+        itemsApi.update(updatedItem);
+      }
+
+      return [...updatedItems].sort(
+        (a, b) => Number(a.completed) - Number(b.completed)
+      );
+    });
+  };
 
   return (
     <Box
@@ -329,13 +313,6 @@ export default function TodosPage() {
             mb: 2,
           }}
         >
-          <Button
-            onClick={handleOpen}
-            variant="contained"
-          >
-            <AddIcon />
-            Add item
-          </Button>
           <TextField
             label="Name"
             variant="outlined"
@@ -354,6 +331,13 @@ export default function TodosPage() {
               },
             }}
           />
+          <Button
+            onClick={handleOpen}
+            variant="contained"
+          >
+            <AddIcon />
+            Add item
+          </Button>
         </Box>
         <AddItem
           open={open}
@@ -442,9 +426,7 @@ export default function TodosPage() {
                   <TableCell>
                     <Checkbox
                       checked={row.completed}
-                    // onChange={() =>
-                    //     handleCheckboxChange(row.id)
-                    // }
+                      onChange={() => handleCheckboxChange(row.id) }
                     />
                   </TableCell>
 
