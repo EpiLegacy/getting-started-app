@@ -1,0 +1,165 @@
+name: Release
+
+# A tag is the only thing that produces a release. Merging to main publishes
+# an "edge" image so the tip of the branch is always pullable, but an edge
+# image is a development build: it is not a version anyone can be asked to run.
+on:
+  push:
+    tags: ['v*.*.*']
+
+# A release is never cancelled halfway. A partially pushed set of tags is far
+# worse than a run that waits its turn.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify the tagged commit
+    runs-on: ubuntu-latest
+    # The same disposable database as the Tests job in ci.yml.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-throwaway-root-password
+          MYSQL_DATABASE: todos_test
+          MYSQL_USER: todo_test
+          MYSQL_PASSWORD: ci-throwaway-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The same gate as every pull request. A tag usually points at a commit
+      # main already validated, but "usually" is not a release process: this
+      # re-checks the exact tree that is about to be published.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+      - name: Integration tests (MySQL 8.4)
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_USER: todo_test
+          MYSQL_PASSWORD: ci-throwaway-password
+          MYSQL_DB: todos_test
+        run: npm run test:integration
+
+      - run: npx tsc -p tsconfig.build.json
+      - run: npm run build
+
+  release:
+    name: Publish and release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # creating the GitHub release
+      packages: write   # pushing to the registry
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Release notes are generated from the commits since the last tag.
+          fetch-depth: 0
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GHCR rejects uppercase names and the organisation is spelled
+      # "EpiLegacy", so github.repository cannot be used as is.
+      - name: Build the image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          # "latest=auto" moves the latest tag onto this version unless the tag
+          # is a prerelease, so v1.2.0-rc.1 never becomes what a plain
+          # "docker pull" returns.
+          flavor: latest=auto
+          # v1.2.3 publishes 1.2.3 and 1.2, so a deployment can pin as tightly
+          # as it wants. The commit SHA stays, as the only immutable tag.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Without this, buildx adds a provenance manifest that GHCR displays
+          # as a second "unknown/unknown" architecture on the package page.
+          provenance: false
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ steps.image.outputs.name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          # GitHub writes the changelog from the merged pull requests.
+          notes="$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${GITHUB_REF_NAME}" -q .body)"
+
+          {
+            echo "## Image"
+            echo
+            echo '```sh'
+            echo "docker pull ${IMAGE}:${version}"
+            echo '```'
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo "$notes"
+          } > notes.md
+
+          # A tag carrying a suffix, such as v1.2.0-rc.1, is a prerelease.
+          args=(--title "${GITHUB_REF_NAME}" --notes-file notes.md)
+          case "${GITHUB_REF_NAME}" in
+            *-*) args+=(--prerelease) ;;
+          esac
+
+          gh release create "${GITHUB_REF_NAME}" "${args[@]}"
+
+      - name: Report what was released
+        run: |
+          {
+            echo "### Released ${GITHUB_REF_NAME}"
+            echo
+            printf '%s\n' '${{ steps.meta.outputs.tags }}' | sed 's/^/- `/; s/$/`/'
+          } >> "$GITHUB_STEP_SUMMARY"
