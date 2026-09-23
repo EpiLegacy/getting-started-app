@@ -64,3 +64,39 @@ export const processedEvents = mysqlTable(
     },
     table => [primaryKey({ columns: [table.eventId, table.handler] })],
 );
+
+/**
+ * Accounts (#40). Created by migration 0001 only, like every table added
+ * after the baseline: nothing in the application issues a CREATE TABLE.
+ *
+ * The email is stored trimmed and lowercased, and the column's collation
+ * (utf8mb4_0900_ai_ci, the database default) compares case-insensitively, so
+ * the unique key also rejects "Alice@x.io" once "alice@x.io" exists.
+ * Only what authentication needs is kept: data minimisation is the default
+ * the GDPR work (#21) builds on.
+ */
+export const users = mysqlTable('users', {
+    id: char('id', { length: 36 }).notNull().primaryKey(),
+    email: varchar('email', { length: 254 }).notNull().unique('uq_users_email'),
+    // scrypt parameters, salt and hash in one string: see src/modules/auth/password.ts.
+    passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+    createdAt: datetime('created_at', { fsp: 3 }).notNull(),
+});
+
+/**
+ * Server-side sessions. The id is the SHA-256 of the token the browser holds
+ * in its cookie, never the token itself: reading this table is not enough to
+ * sign in as anyone. Deleting a user deletes their sessions.
+ */
+export const sessions = mysqlTable(
+    'sessions',
+    {
+        id: char('id', { length: 64 }).notNull().primaryKey(),
+        userId: char('user_id', { length: 36 })
+            .notNull()
+            .references(() => users.id, { onDelete: 'cascade' }),
+        createdAt: datetime('created_at', { fsp: 3 }).notNull(),
+        expiresAt: datetime('expires_at', { fsp: 3 }).notNull(),
+    },
+    table => [index('idx_sessions_user').on(table.userId)],
+);
