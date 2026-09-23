@@ -22,6 +22,7 @@ export function createApp(): Express {
     app.set('env', 'production');
 
     app.use(express.json());
+    app.get('/health', (_req, res) => res.json({ status: 'ok' }));
     app.use(express.static(path.join(__dirname, '../../../dist')));
     // The Drizzle pool must be initialised before the first /auth request.
     app.use(
