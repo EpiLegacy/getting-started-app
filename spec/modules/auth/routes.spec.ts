@@ -2,19 +2,26 @@ import express from 'express';
 import request from 'supertest';
 import { createAuthRouter } from '../../../src/modules/auth/routes';
 import { createAuthService } from '../../../src/modules/auth/service';
+import { createAuthThrottle, type AuthThrottle } from '../../../src/modules/auth/throttle';
 import { FakeRepository, fakeHasher } from './fakes';
 
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
-function app({ secureCookies = false, withService = true } = {}) {
+function app({
+    secureCookies = false,
+    withService = true,
+    throttle,
+}: { secureCookies?: boolean; withService?: boolean; throttle?: AuthThrottle } = {}) {
     let tokens = 0;
     const service = createAuthService(new FakeRepository(), {
         hasher: fakeHasher,
         newToken: () => `token-${++tokens}`,
     });
     const app = express();
+    // Lets a test pick the client address with X-Forwarded-For.
+    app.set('trust proxy', true);
     app.use(express.json());
-    app.use('/auth', createAuthRouter(withService ? service : undefined, { secureCookies }));
+    app.use('/auth', createAuthRouter(withService ? service : undefined, { secureCookies, throttle }));
     return app;
 }
 
@@ -151,4 +158,118 @@ test('without MySQL, every auth route answers 503 instead of pretending to work'
         expect(res.status).toBe(503);
         expect(res.body.error).toBe('auth_unavailable');
     }
+});
+
+describe('attempt limits', () => {
+    const WRONG = { ...ALICE, password: 'not the right one' };
+    let now: number;
+    let server: ReturnType<typeof app>;
+
+    const login = (body: object, ip = '203.0.113.1') =>
+        request(server).post('/auth/login').set('X-Forwarded-For', ip).send(body);
+
+    beforeEach(async () => {
+        now = Date.parse('2026-09-23T10:00:00Z');
+        server = app({ throttle: createAuthThrottle(() => now) });
+        // From another address, so the registration does not count against the tests.
+        await request(server).post('/auth/register').set('X-Forwarded-For', '198.51.100.9').send(ALICE);
+        fakeHasher.verify.mockClear();
+    });
+
+    test('a sixth guess at one account is refused, even with the right password', async () => {
+        for (let i = 0; i < 5; i++) expect((await login(WRONG)).status).toBe(401);
+
+        const res = await login(ALICE);
+
+        expect(res.status).toBe(429);
+        expect(res.body).toEqual({ error: 'too_many_attempts' });
+        expect(res.headers['retry-after']).toBe('900');
+        expect(sessionCookie(res)).toBe('');
+    });
+
+    test('a refused attempt does not even check the password', async () => {
+        for (let i = 0; i < 5; i++) await login(WRONG);
+        fakeHasher.verify.mockClear();
+
+        await login(ALICE);
+
+        expect(fakeHasher.verify).not.toHaveBeenCalled();
+    });
+
+    test('guessing from one address cannot lock the owner out from another', async () => {
+        for (let i = 0; i < 5; i++) await login(WRONG, '203.0.113.1');
+
+        expect((await login(ALICE, '203.0.113.2')).status).toBe(200);
+    });
+
+    test('the account may try again once the window has passed', async () => {
+        for (let i = 0; i < 5; i++) await login(WRONG);
+
+        now += 15 * 60 * 1000;
+
+        expect((await login(ALICE)).status).toBe(200);
+    });
+
+    test('an email differing only in case shares the same count', async () => {
+        for (let i = 0; i < 5; i++) await login({ ...WRONG, email: i % 2 ? 'ALICE@example.com' : 'alice@EXAMPLE.com' });
+
+        expect((await login(ALICE)).status).toBe(429);
+    });
+
+    test('a successful login clears the count for that account', async () => {
+        for (let i = 0; i < 4; i++) await login(WRONG);
+        expect((await login(ALICE)).status).toBe(200);
+
+        for (let i = 0; i < 5; i++) expect((await login(WRONG)).status).toBe(401);
+        expect((await login(WRONG)).status).toBe(429);
+    });
+
+    test('one address trying many accounts is stopped after 20 failures', async () => {
+        for (let i = 0; i < 20; i++) {
+            expect((await login({ ...WRONG, email: `user${i}@example.com` })).status).toBe(401);
+        }
+
+        expect((await login(ALICE)).status).toBe(429);
+    });
+
+    test('successful logins do not use up the address budget', async () => {
+        for (let i = 0; i < 25; i++) expect((await login(ALICE)).status).toBe(200);
+    });
+
+    test('concurrent guesses cannot get past the limit', async () => {
+        const answers = await Promise.all(Array.from({ length: 10 }, () => login(WRONG)));
+        const statuses = answers.map(res => res.status).sort();
+
+        expect(statuses).toEqual([401, 401, 401, 401, 401, 429, 429, 429, 429, 429]);
+    });
+
+    test('an address may start 10 registrations an hour', async () => {
+        const register = (i: number) =>
+            request(server)
+                .post('/auth/register')
+                .set('X-Forwarded-For', '203.0.113.7')
+                .send({ ...ALICE, email: `new${i}@example.com` });
+
+        for (let i = 0; i < 10; i++) expect((await register(i)).status).toBe(201);
+
+        const res = await register(10);
+        expect(res.status).toBe(429);
+        expect(res.headers['retry-after']).toBe('3600');
+    });
+
+    test('a malformed registration is answered 400 and not counted', async () => {
+        for (let i = 0; i < 15; i++) {
+            const res = await request(server)
+                .post('/auth/register')
+                .set('X-Forwarded-For', '203.0.113.8')
+                .send({ email: 'nope', password: 'short' });
+            expect(res.status).toBe(400);
+        }
+
+        const res = await request(server)
+            .post('/auth/register')
+            .set('X-Forwarded-For', '203.0.113.8')
+            .send({ ...ALICE, email: 'fresh@example.com' });
+        expect(res.status).toBe(201);
+    });
 });
