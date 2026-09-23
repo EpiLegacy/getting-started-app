@@ -66,9 +66,10 @@ USER node
 
 EXPOSE 3000
 
-# Switch to /health as soon as that endpoint exists (audit section 2.4).
+# /health answers once start-up has finished, without an account or any
+# database round trip (audit section 2.4). CI runs this exact command.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/items').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Exec form: node runs as PID 1 and receives SIGTERM, so the graceful shutdown
 # already implemented in src/index.ts actually runs.
