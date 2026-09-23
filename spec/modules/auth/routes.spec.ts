@@ -3,7 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { createAuthRouter } from '../../../src/modules/auth/routes';
 import { createAuthService } from '../../../src/modules/auth/service';
-import { createAuthThrottle, type AuthThrottle } from '../../../src/modules/auth/throttle';
+import { LIMITS, createAuthThrottle, type AuthThrottle } from '../../../src/modules/auth/throttle';
 import { FakeRepository, fakeHasher } from './fakes';
 
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
@@ -242,8 +242,8 @@ describe('attempt limits', () => {
         expect((await login(WRONG)).status).toBe(429);
     });
 
-    test('one address trying many accounts is stopped after 20 failures', async () => {
-        for (let i = 0; i < 20; i++) {
+    test('one address trying many accounts is stopped after 100 failures', async () => {
+        for (let i = 0; i < 100; i++) {
             expect((await login({ ...WRONG, email: `user${i}@example.com` })).status).toBe(401);
         }
 
@@ -251,7 +251,7 @@ describe('attempt limits', () => {
     });
 
     test('successful logins do not use up the address budget', async () => {
-        for (let i = 0; i < 25; i++) expect((await login(ALICE)).status).toBe(200);
+        for (let i = 0; i < 105; i++) expect((await login(ALICE)).status).toBe(200);
     });
 
     test('concurrent guesses cannot get past the limit', async () => {
@@ -261,22 +261,22 @@ describe('attempt limits', () => {
         expect(statuses).toEqual([401, 401, 401, 401, 401, 429, 429, 429, 429, 429]);
     });
 
-    test('an address may start 10 registrations an hour', async () => {
+    test('an address may start 50 registrations an hour', async () => {
         const register = (i: number) =>
             request(server)
                 .post('/auth/register')
                 .set('X-Forwarded-For', '203.0.113.7')
                 .send({ ...ALICE, email: `new${i}@example.com` });
 
-        for (let i = 0; i < 10; i++) expect((await register(i)).status).toBe(201);
+        for (let i = 0; i < 50; i++) expect((await register(i)).status).toBe(201);
 
-        const res = await register(10);
+        const res = await register(50);
         expect(res.status).toBe(429);
         expect(res.headers['retry-after']).toBe('3600');
     });
 
     test('a malformed registration is answered 400 and not counted', async () => {
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 55; i++) {
             const res = await request(server)
                 .post('/auth/register')
                 .set('X-Forwarded-For', '203.0.113.8')
@@ -290,4 +290,10 @@ describe('attempt limits', () => {
             .send({ ...ALICE, email: 'fresh@example.com' });
         expect(res.status).toBe(201);
     });
+});
+
+test('a shared network keeps a usable budget: the limits per address are loose', () => {
+    expect(LIMITS.loginPerAccount).toEqual({ limit: 5, windowMs: 15 * 60 * 1000 });
+    expect(LIMITS.loginPerIp.limit).toBeGreaterThanOrEqual(100);
+    expect(LIMITS.registerPerIp.limit).toBeGreaterThanOrEqual(50);
 });

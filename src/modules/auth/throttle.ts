@@ -18,9 +18,16 @@ export const LIMITS = {
      * would let anyone lock a user out by failing on purpose.
      */
     loginPerAccount: { limit: 5, windowMs: FIFTEEN_MINUTES },
-    /** One address trying a common password against many accounts. */
-    loginPerIp: { limit: 20, windowMs: FIFTEEN_MINUTES },
-    registerPerIp: { limit: 10, windowMs: ONE_HOUR },
+    /**
+     * One address trying a common password against many accounts. Loose on
+     * purpose, like the registration limit: a school or office network puts
+     * dozens of people behind one public address, and they must not share a
+     * budget of a handful of mistakes. The per-account limit is the one that
+     * stops brute force.
+     */
+    loginPerIp: { limit: 100, windowMs: FIFTEEN_MINUTES },
+    /** Bounds the hashing an address can trigger, about 128 MiB per attempt. */
+    registerPerIp: { limit: 50, windowMs: ONE_HOUR },
 } as const;
 
 export interface AuthThrottle {
