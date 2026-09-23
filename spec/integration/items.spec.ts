@@ -81,6 +81,7 @@ test('the application under test is wired like src/index.ts', () => {
     expect(wiring).toEqual([
         'app.use(express.json());',
         "app.use(express.static(path.join(__dirname, '../dist')));",
+        "app.use('/auth', authRouter);",
         "app.get('/items', getItems);",
         "app.post('/items', addItem);",
         "app.put('/items/:id', updateItem);",

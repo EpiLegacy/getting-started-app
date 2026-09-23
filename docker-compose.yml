@@ -26,6 +26,11 @@ services:
       # itself; run `npm run db:migrate` against this database first if you
       # switch to drizzle — it never creates tables on its own.
       PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
+      # This stack serves plain HTTP, and a Secure session cookie is dropped
+      # over HTTP by some browsers even on localhost. Any exposed deployment
+      # serves HTTPS and leaves this unset, which keeps the cookie Secure.
+      # /auth needs the users and sessions tables: `npm run db:migrate` first.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     depends_on:
       # Load-bearing, not cosmetic: the MySQL adapter gives up after 10s
       # (waitPort), while the first MySQL 8 startup takes far longer. Without

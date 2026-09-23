@@ -1,5 +1,9 @@
 import path from 'path';
 import express, { type Express } from 'express';
+import { isDrizzleConfigured } from '../../../src/infrastructure/db/drizzle';
+import { drizzleAuthRepository } from '../../../src/modules/auth/repository.drizzle';
+import { createAuthRouter } from '../../../src/modules/auth/routes';
+import { createAuthService } from '../../../src/modules/auth/service';
 
 /**
  * The Express application as src/index.ts wires it. src/index.ts itself cannot
@@ -15,6 +19,13 @@ export function createApp(): Express {
 
     app.use(express.json());
     app.use(express.static(path.join(__dirname, '../../../dist')));
+    // The Drizzle pool must be initialised before the first /auth request.
+    app.use(
+        '/auth',
+        createAuthRouter(isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined, {
+            secureCookies: false,
+        }),
+    );
 
     app.get('/items', require('../../../src/routes/getItems'));
     app.post('/items', require('../../../src/routes/addItem'));

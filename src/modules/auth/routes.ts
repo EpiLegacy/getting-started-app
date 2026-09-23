@@ -1,0 +1,112 @@
+import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import type { ZodType } from 'zod';
+import { SESSION_COOKIE, readCookie, sessionCookieOptions } from './cookies';
+import { loginSchema, registerSchema } from './credentials';
+import { SESSION_TTL_MS, type AuthService, type SignedIn } from './service';
+import type { User } from './types';
+
+export interface AuthRouterOptions {
+    /** Adds the Secure attribute to the session cookie. */
+    secureCookies: boolean;
+}
+
+function parseBody<T>(schema: ZodType<T>, req: Request, res: Response): T | undefined {
+    const parsed = schema.safeParse(req.body);
+    if (parsed.success) return parsed.data;
+
+    res.status(400).json({
+        error: 'invalid_request',
+        issues: parsed.error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })),
+    });
+    return undefined;
+}
+
+/** Only for routes behind requireAuth(). */
+export function currentUser(res: Response): User {
+    return res.locals.user as User;
+}
+
+/**
+ * Answers 401 unless the request carries a valid session cookie, and makes
+ * the user available to the next handlers through currentUser(res).
+ */
+export function requireAuth(service: AuthService): RequestHandler {
+    return async (req: Request, res: Response, next: NextFunction) => {
+        const token = readCookie(req.headers.cookie, SESSION_COOKIE);
+        const user = token ? await service.authenticate(token) : undefined;
+        if (!user) {
+            res.status(401).json({ error: 'unauthenticated' });
+            return;
+        }
+        res.locals.user = user;
+        next();
+    };
+}
+
+/**
+ * /auth/register, /auth/login, /auth/logout and /auth/me.
+ *
+ * Without a service (MYSQL_HOST unset: the accounts live in MySQL only, see
+ * ADR 0001) every route answers 503 rather than pretending to work.
+ */
+export function createAuthRouter(service: AuthService | undefined, options: AuthRouterOptions): Router {
+    const router = Router();
+
+    // Nothing an auth endpoint answers may be kept by a shared cache.
+    router.use((_req, res, next) => {
+        res.set('Cache-Control', 'no-store');
+        next();
+    });
+
+    if (!service) {
+        router.use((_req, res) => {
+            res.status(503).json({ error: 'auth_unavailable', message: 'Authentication needs MySQL: set MYSQL_HOST.' });
+        });
+        return router;
+    }
+
+    // The session was created a moment ago with exactly this lifetime. Reading
+    // the clock again here would make the cookie a millisecond shorter.
+    const signIn = (res: Response, session: SignedIn, status: number) => {
+        res.cookie(SESSION_COOKIE, session.token, sessionCookieOptions(options.secureCookies, SESSION_TTL_MS));
+        res.status(status).json({ user: session.user });
+    };
+
+    router.post('/register', async (req, res) => {
+        const credentials = parseBody(registerSchema, req, res);
+        if (!credentials) return;
+
+        const result = await service.register(credentials);
+        if (result.kind === 'email_taken') {
+            res.status(409).json({ error: 'email_taken' });
+            return;
+        }
+        signIn(res, result, 201);
+    });
+
+    router.post('/login', async (req, res) => {
+        const credentials = parseBody(loginSchema, req, res);
+        if (!credentials) return;
+
+        const result = await service.login(credentials);
+        if (result.kind === 'invalid_credentials') {
+            // One answer for an unknown email and a wrong password.
+            res.status(401).json({ error: 'invalid_credentials' });
+            return;
+        }
+        signIn(res, result, 200);
+    });
+
+    router.post('/logout', async (req, res) => {
+        const token = readCookie(req.headers.cookie, SESSION_COOKIE);
+        if (token) await service.logout(token);
+        res.clearCookie(SESSION_COOKIE, sessionCookieOptions(options.secureCookies));
+        res.status(204).end();
+    });
+
+    router.get('/me', requireAuth(service), (_req, res) => {
+        res.json({ user: currentUser(res) });
+    });
+
+    return router;
+}
