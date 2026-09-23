@@ -41,9 +41,9 @@ describe('getItems', () => {
 
         expect(JSON.stringify(items)).toBe(
             JSON.stringify([
-                { id: 'b', name: 'second id', completed: true },
-                { id: 'a', name: null, completed: false },
-                { id: 'b', name: 'duplicate id', completed: false },
+                { id: 'b', name: 'second id', completed: true, deadline: null, priorisation: null },
+                { id: 'a', name: null, completed: false, deadline: null, priorisation: null },
+                { id: 'b', name: 'duplicate id', completed: false, deadline: null, priorisation: null },
             ]),
         );
     });
@@ -58,7 +58,7 @@ describe('getItem', () => {
 
         const item = await db.getItem(ID);
 
-        expect(JSON.stringify(item)).toBe(JSON.stringify({ id: ID, name: 'Café 🎉', completed: true }));
+        expect(JSON.stringify(item)).toBe(JSON.stringify({ id: ID, name: 'Café 🎉', completed: true, deadline: null, priorisation: null }));
     });
 
     test('resolves undefined for an unknown id', async () => {
@@ -74,11 +74,23 @@ describe('getItem', () => {
             [ID, 'second', 1],
         ]);
 
-        await expect(db.getItem(ID)).resolves.toEqual({ id: ID, name: 'first', completed: false });
+        await expect(db.getItem(ID)).resolves.toEqual({ id: ID, name: 'first', completed: false, deadline: null, priorisation: null });
     });
 });
 
 describe('storeItem', () => {
+    test('stores and updates deadline and priorisation', async () => {
+        const item = { id: ID, name: 'Planned task', completed: false, deadline: '2026-10-01', priorisation: 'high' as const };
+        await db.storeItem(item);
+        expect(await db.getItem(ID)).toEqual(item);
+
+        const updated = { ...item, deadline: '2026-10-02', priorisation: 'low' as const };
+        await db.updateItem(ID, updated);
+        expect(await db.getItems()).toEqual([updated]);
+        const [rows] = await connection.query('SELECT deadline, priorisation FROM todo_items WHERE id = ?', [ID]);
+        expect(rows).toEqual([{ deadline: '2026-10-02', priorisation: 'low' }]);
+    });
+
     test('inserts the item, completed stored as 1 or 0 by truthiness', async () => {
         await db.storeItem({ id: 'done', name: 'done', completed: true } as any);
         await db.storeItem({ id: 'open', name: 'open', completed: false } as any);

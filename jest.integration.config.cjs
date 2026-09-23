@@ -13,6 +13,19 @@
  * @type {import('jest').Config}
  */
 const base = require('./jest.config.cjs');
+const path = require('node:path');
+const dotenv = require('dotenv');
+
+// Explicit shell/CI settings win, followed by test-specific settings. Reuse
+// local connection settings, but never inherit the application's database:
+// these suites delete data. The guard still rejects an explicit unsafe name.
+dotenv.config({ path: path.join(__dirname, '.env.integration'), quiet: true });
+const local = {};
+dotenv.config({ path: path.join(__dirname, '.env'), processEnv: local, quiet: true });
+delete local.MYSQL_DB;
+dotenv.populate(process.env, local);
+process.env.MYSQL_DB ??= 'todos_test';
+process.env.MYSQL_HOST ??= '127.0.0.1';
 
 // CI runners and containers default to UTC, which would hide a date written in
 // local time. With another zone, only the pool's timezone: 'Z' keeps the dates
