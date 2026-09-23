@@ -198,3 +198,13 @@ test('the purge deletes expired sessions and keeps the others', async () => {
 
     expect((await rows('SELECT id FROM sessions')).map(row => row.id)).toEqual([kept.id]);
 });
+
+test('a session expiring this very instant is both refused and purged', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+    const now = new Date();
+    await connection.query('UPDATE sessions SET expires_at = ?', [now]);
+    const [session] = await rows('SELECT id FROM sessions');
+
+    expect(await drizzleAuthRepository.findUserBySession(session.id, now)).toBeUndefined();
+    expect(await drizzleAuthRepository.deleteExpiredSessions(now)).toBe(1);
+});
