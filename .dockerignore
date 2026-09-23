@@ -17,6 +17,7 @@ spec/
 jest.config.cjs
 jest.integration.config.cjs
 commitlint.config.mts
+eslint.config.mjs
 
 # Container tooling.
 Dockerfile

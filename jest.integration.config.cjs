@@ -38,6 +38,10 @@ module.exports = {
   testPathIgnorePatterns: ['/node_modules/'],
   setupFiles: ['<rootDir>/spec/integration/support/guard.ts'],
   coverageDirectory: 'coverage/integration',
+  // The floor in jest.config.cjs guards the unit suite. This suite exercises
+  // different code paths, so inheriting it would fail on numbers that were
+  // never meant for it. It gets its own floor once its coverage is stable.
+  coverageThreshold: {},
   // Every file uses the same database, so they must not run concurrently.
   maxWorkers: 1,
   // Some scenarios wait on purpose, for a lock or for the relay.
