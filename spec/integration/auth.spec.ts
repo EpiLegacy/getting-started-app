@@ -1,8 +1,10 @@
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { init as initDrizzlePool, teardown as teardownDrizzlePool } from '../../src/infrastructure/db/drizzle';
+import { drizzleAuthRepository } from '../../src/modules/auth/repository.drizzle';
 import { hashSessionToken } from '../../src/modules/auth/tokens';
 import { createApp } from './support/app';
 import { connect, dropTables, showCreateTable } from './support/database';
@@ -19,8 +21,10 @@ const MIGRATION = path.join(__dirname, '../../drizzle/0001_auth.sql');
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
 // A fresh application per test: the attempt limits are held in memory, and
-// every request here comes from the same address.
-let app: ReturnType<typeof createApp>;
+// every request here comes from the same address. It listens before the first
+// request, rather than letting supertest open a server per request on a fresh
+// ephemeral port, which occasionally answered with something other than HTTP.
+let app: http.Server;
 let connection: Connection;
 
 async function applyMigration(): Promise<void> {
@@ -50,9 +54,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-    app = createApp();
+    app = http.createServer(createApp());
+    await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
     await connection.query('DELETE FROM sessions');
     await connection.query('DELETE FROM users');
+});
+
+afterEach(async () => {
+    await new Promise(resolve => app.close(resolve));
 });
 
 afterAll(async () => {
@@ -177,4 +186,15 @@ test("deleting a user ends the user's sessions", async () => {
 
     expect(await rows('SELECT * FROM sessions')).toHaveLength(0);
     expect((await agent.get('/auth/me')).status).toBe(401);
+});
+
+test('the purge deletes expired sessions and keeps the others', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+    await request(app).post('/auth/login').send(ALICE);
+    const [kept] = await rows('SELECT id FROM sessions ORDER BY created_at LIMIT 1');
+    await connection.query('UPDATE sessions SET expires_at = ? WHERE id <> ?', [new Date(Date.now() - 1000), kept.id]);
+
+    expect(await drizzleAuthRepository.deleteExpiredSessions(new Date())).toBe(1);
+
+    expect((await rows('SELECT id FROM sessions')).map(row => row.id)).toEqual([kept.id]);
 });
