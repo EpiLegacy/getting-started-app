@@ -139,3 +139,25 @@ describe('authenticate and logout', () => {
         expect(await service().authenticate('token-2')).toBeDefined();
     });
 });
+
+describe('purgeExpiredSessions', () => {
+    test('deletes the expired sessions only, and says how many', async () => {
+        await service().register(ALICE);
+        now = new Date(NOW.getTime() + 60_000);
+        await service().login(ALICE);
+
+        now = new Date(NOW.getTime() + SESSION_TTL_MS);
+        expect(await service().purgeExpiredSessions()).toBe(1);
+
+        expect(repository.sessions).toHaveLength(1);
+        expect(await service().authenticate('token-2')).toBeDefined();
+    });
+
+    test('a session expiring exactly now is purged, like it is refused', async () => {
+        await service().register(ALICE);
+        now = new Date(NOW.getTime() + SESSION_TTL_MS);
+
+        expect(await service().authenticate('token-1')).toBeUndefined();
+        expect(await service().purgeExpiredSessions()).toBe(1);
+    });
+});

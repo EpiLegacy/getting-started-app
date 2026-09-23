@@ -15,14 +15,15 @@ import { resolvePersistenceDriver } from './shared/persistenceDriver';
 import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
 import { createAuthRouter } from './modules/auth/routes';
 import { createAuthService } from './modules/auth/service';
+import { startSessionPurge, type RunningPurge } from './modules/auth/sessionPurge';
 
 // Accounts live in MySQL only (ADR 0001). The session cookie is Secure in the
 // production image unless SESSION_COOKIE_SECURE=false, for a demo served over
 // plain HTTP on something other than localhost.
-const authRouter = createAuthRouter(
-    isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined,
-    { secureCookies: process.env.NODE_ENV === 'production' && process.env.SESSION_COOKIE_SECURE !== 'false' },
-);
+const authService = isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined;
+const authRouter = createAuthRouter(authService, {
+    secureCookies: process.env.NODE_ENV === 'production' && process.env.SESSION_COOKIE_SECURE !== 'false',
+});
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
@@ -64,8 +65,12 @@ async function startEventing(): Promise<void> {
 }
 
 // The auth repository uses the Drizzle pool whatever PERSISTENCE_DRIVER says.
+let sessionPurge: RunningPurge | undefined;
+
 async function startAuth(): Promise<void> {
-    if (isDrizzleConfigured()) await initDrizzlePool();
+    if (!authService) return;
+    await initDrizzlePool();
+    sessionPurge = startSessionPurge(authService);
 }
 
 db.init()
@@ -81,6 +86,7 @@ db.init()
 
 const gracefulShutdown = (): void => {
     relay?.stop();
+    sessionPurge?.stop();
     Promise.allSettled([publisher?.close(), closePool(), db.teardown()]).then(() =>
         process.exit(),
     );

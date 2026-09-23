@@ -42,6 +42,8 @@ export interface AuthService {
     logout(token: string): Promise<void>;
     /** The user a cookie token belongs to, if its session is still valid. */
     authenticate(token: string): Promise<User | undefined>;
+    /** Deletes the sessions nobody can use any more. Returns how many. */
+    purgeExpiredSessions(): Promise<number>;
 }
 
 export function createAuthService(repository: AuthRepository, overrides: Partial<AuthDependencies> = {}): AuthService {
@@ -103,6 +105,10 @@ export function createAuthService(repository: AuthRepository, overrides: Partial
 
         async authenticate(token) {
             return repository.findUserBySession(hashSessionToken(token), deps.now());
+        },
+
+        async purgeExpiredSessions() {
+            return repository.deleteExpiredSessions(deps.now());
         },
     };
 }
