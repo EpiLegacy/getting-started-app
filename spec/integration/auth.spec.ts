@@ -18,7 +18,9 @@ const AUTH_TABLES = ['sessions', 'users'];
 const MIGRATION = path.join(__dirname, '../../drizzle/0001_auth.sql');
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
-const app = createApp();
+// A fresh application per test: the attempt limits are held in memory, and
+// every request here comes from the same address.
+let app: ReturnType<typeof createApp>;
 let connection: Connection;
 
 async function applyMigration(): Promise<void> {
@@ -48,6 +50,7 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+    app = createApp();
     await connection.query('DELETE FROM sessions');
     await connection.query('DELETE FROM users');
 });
@@ -118,6 +121,22 @@ test('a wrong password is refused', async () => {
     const res = await request(app).post('/auth/login').send({ ...ALICE, password: 'not the right one' });
 
     expect(res.status).toBe(401);
+});
+
+test('after five wrong passwords, even the right one is refused for a while', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+
+    for (let i = 0; i < 5; i++) {
+        expect((await request(app).post('/auth/login').send({ ...ALICE, password: 'not the right one' })).status).toBe(401);
+    }
+    const res = await request(app).post('/auth/login').send(ALICE);
+
+    expect(res.status).toBe(429);
+    // Counted from the first failure, which real hashing put a moment ago.
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(850);
+    expect(Number(res.headers['retry-after'])).toBeLessThanOrEqual(900);
+    // Registration opened one session; the refused login opened none.
+    expect(await rows('SELECT * FROM sessions')).toHaveLength(1);
 });
 
 test('an email differing only in case is the same account', async () => {
