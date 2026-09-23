@@ -1,52 +1,17 @@
-import express from 'express';
-import path from 'path';
-const app = express();
+import { createApp } from './app';
 import db from './persistence';
-import getItems from './routes/getItems';
-import addItem from './routes/addItem';
-import updateItem from './routes/updateItem';
-import deleteItem from './routes/deleteItem';
 import { closePool, ensureEventSchema, isMysqlConfigured } from './infrastructure/db/mysql';
-import { init as initDrizzlePool, isDrizzleConfigured } from './infrastructure/db/drizzle';
+import { init as initDrizzlePool, isDrizzleConfigured, teardown as closeDrizzlePool } from './infrastructure/db/drizzle';
 import { RabbitmqPublisher } from './infrastructure/messaging/rabbitmqPublisher';
 import { startOutboxRelay, type RunningRelay } from './infrastructure/outbox/relay';
 import { startOutboxRelay as startOutboxRelayDrizzle } from './infrastructure/outbox/relay.drizzle';
 import { resolvePersistenceDriver } from './shared/persistenceDriver';
 import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
-import { createAuthRouter } from './modules/auth/routes';
 import { createAuthService } from './modules/auth/service';
 
-// Accounts live in MySQL only (ADR 0001). The session cookie is Secure in the
-// production image unless SESSION_COOKIE_SECURE=false, for a demo served over
-// plain HTTP on something other than localhost.
-const authRouter = createAuthRouter(
-    isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined,
-    { secureCookies: process.env.NODE_ENV === 'production' && process.env.SESSION_COOKIE_SECURE !== 'false' },
-);
-
-app.use(express.json());
-// Liveness for the Docker HEALTHCHECK and the CI smoke test. The server only
-// listens once persistence and eventing have started, so any answer means
-// start-up succeeded. Anonymous and free of I/O on purpose: a probe must
-// neither need an account nor fail because MySQL is slow for a moment.
-app.get('/health', (_req: unknown, res: { json: (body: unknown) => void }) => res.json({ status: 'ok' }));
-app.use(express.static(path.join(__dirname, '../dist')));
-app.use('/auth', authRouter);
-
-app.get('/items', getItems);
-app.post('/items', addItem);
-app.put('/items/:id', updateItem);
-app.delete('/items/:id', deleteItem);
-
-// Serve the single-page application when a frontend route is opened directly.
-app.get('/{*path}', (req, res, next) => {
-    // Preserve API and asset 404s instead of responding with the HTML shell.
-    if (/^\/(items|auth|health|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
-        next();
-        return;
-    }
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+const authService = isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined;
+const app = createApp(authService,
+    process.env.NODE_ENV === 'production' && process.env.SESSION_COOKIE_SECURE !== 'false');
 
 let relay: RunningRelay | undefined;
 let publisher: RabbitmqPublisher | undefined;
@@ -91,7 +56,7 @@ db.init()
 
 const gracefulShutdown = (): void => {
     relay?.stop();
-    Promise.allSettled([publisher?.close(), closePool(), db.teardown()]).then(() =>
+    Promise.allSettled([publisher?.close(), closePool(), db.teardown().then(closeDrizzlePool)]).then(() =>
         process.exit(),
     );
 };

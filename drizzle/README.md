@@ -48,12 +48,50 @@ untouched; missing baseline tables are created, and Drizzle records the
 migration after all statements succeed. As with any baseline, first verify
 that an existing production schema matches `src/infrastructure/db/schema.ts`.
 
-## Rollback
+## Baseline rollback
 
-No migration in this folder is destructive (no `DROP`, type change, added
-`NOT NULL` or `PRIMARY KEY` — see ADR 0001, "Aucune migration destructive").
+The baseline does not drop or alter existing columns (see ADR 0001).
 The baseline only describes tables that already exist, so there is nothing to
 roll back: reverting to `PERSISTENCE_DRIVER=legacy` (see `src/persistence`)
 needs no migration change either way. Future schema changes follow the
 expand/contract model, which keeps every migration compatible with the
 previous version of the code and reversible the same way.
+
+## Task ownership (`0002_task_ownership.sql`)
+
+Existing tasks remain in `todo_items`, with `user_id = NULL`. Signed-in users
+can list and claim these tasks; claiming removes the task from the shared list
+and gives only the claimant permission to edit or delete it. New tasks always
+belong to the session user. Account deletion is restricted while tasks refer to
+that account: it must not accidentally publish private tasks as unassigned.
+
+The legacy `id` column allows duplicates and NULLs. A new `task_key`
+AUTO_INCREMENT primary key gives every existing row its own identity without
+rewriting or discarding any legacy values. The authenticated API exposes this
+key as a string `id`; clients must use the returned IDs, not cached legacy IDs.
+The ownership index covers both per-user and unassigned lists.
+
+The migration also reconciles `deadline` and `priorisation`: the earlier
+`0001_complex_ben_urich.sql` was not in the journal, although some deployments
+applied it manually. Migration 0002 adds those columns only where missing. Do
+not manually run every SQL file; `npm run db:migrate` follows the journal.
+
+Deployment:
+
+1. Stop application writers and back up the database. Adding the generated key
+   rebuilds the table, so plan a maintenance window appropriate to its size.
+2. If tasks remain in SQLite, use the existing `db:merge-sqlite` dry run/apply
+   workflow before enabling accounts, and resolve its reported conflicts.
+3. Run `npm run db:migrate` with the intended MySQL connection variables.
+4. Compare task counts and legacy field values with the backup. All migrated
+   tasks should still have NULL owners and distinct non-NULL task keys.
+5. Start the new application. Register/sign in, then claim tasks from the shared
+   unassigned list. Do not run older anonymous API instances alongside it.
+
+No migration is run by the API at startup. This change keeps all task rows and
+legacy values; it adds constraints only to the new key and ownership columns.
+After users start claiming tasks, rolling back to the anonymous API would expose
+private tasks. Keep the authenticated API in place or take it offline while
+preparing an ownership-aware rollback; switching the persistence flag is not a
+security rollback. Task HTTP routes use Drizzle regardless of that flag, as the
+authentication routes already do.

@@ -1,48 +1,46 @@
 import React, { useState } from 'react';
-import { Box, Button, MenuItem, Modal, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, MenuItem, Modal, TextField, Typography } from '@mui/material';
 import { itemsApi } from '../api/itemsApi';
-import type { Priority, Item } from '../../../../types';
+import { errorMessage } from '../../../lib/http';
+import type { Priority } from '../../../../types';
 
 interface AddItemProps {
   open: boolean;
   handleClose: () => void;
-  refresh: boolean;
-  setRefresh: React.Dispatch<React.SetStateAction<boolean>>;
+  onCreated: () => void;
 }
 
-export default function AddItem({ open, handleClose, refresh, setRefresh }: AddItemProps) {
+export default function AddItem({ open, handleClose, onCreated }: AddItemProps) {
   const [name, setName] = useState<string>('');
   const [deadline, setDeadline] = useState<string>('');
   const [priorisation, setPriorisation] = useState<Priority>('medium');
 
-  const handleSubmit = (
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
 
-    const item: Item = {
-      id: name,
-      completed: false,
-      name,
-      deadline,
-      priorisation,
-    };
-
-    itemsApi
-      .create(item)
-      .then();
-
-    setName('');
-    setDeadline('');
-    setPriorisation('medium');
-    setRefresh(!refresh);
-    handleClose();
+    setBusy(true);
+    setError('');
+    try {
+      await itemsApi.create({ completed: false, name, deadline, priorisation });
+      setName('');
+      setDeadline('');
+      setPriorisation('medium');
+      onCreated();
+      handleClose();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally { setBusy(false); }
   };
 
   return (
     <Modal
       open={open}
-      onClose={handleClose}
+      onClose={busy ? undefined : handleClose}
       aria-labelledby="modal-modal-title"
     >
       <Box
@@ -71,6 +69,7 @@ export default function AddItem({ open, handleClose, refresh, setRefresh }: AddI
           Ajouter une tâche
         </Typography>
 
+        {error && <Alert severity="error">{error}</Alert>}
         <TextField
           name="name"
           label="Nom"
@@ -132,6 +131,7 @@ export default function AddItem({ open, handleClose, refresh, setRefresh }: AddI
           }}
         >
           <Button
+            disabled={busy}
             type="button"
             variant="outlined"
             onClick={handleClose}
@@ -140,6 +140,7 @@ export default function AddItem({ open, handleClose, refresh, setRefresh }: AddI
           </Button>
 
           <Button
+            disabled={busy}
             type="submit"
             variant="contained"
           >

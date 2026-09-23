@@ -2,25 +2,19 @@ import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryK
 import { Priority } from '../../types';
 
 /**
- * Declares the database exactly as production has it today (captured by
- * scripts/db/inspect.sql on 2026-09-17, MySQL 8.4.11, utf8mb4 /
- * utf8mb4_0900_ai_ci). Nothing here is "corrected": no primary key or
- * NOT NULL is added to `todoItems`, and `todoItemsMergeConflicts` (never
- * created in production - the SQLite merge was never run) is intentionally
- * left out. Any future schema change follows the expand/contract model from
- * ADR 0001 instead of editing a column in place.
+ * Legacy fields remain nullable and unchanged. taskKey uniquely identifies
+ * each physical row, including rows with duplicate or NULL legacy ids.
+ * userId = NULL means an existing task is available to claim.
  */
-
-// No primary key, every column nullable: matches `CREATE TABLE todo_items
-// (id varchar(36), name varchar(255), completed boolean)` exactly, including
-// duplicate ids and NULL columns that the legacy adapters already produce.
 export const todoItems = mysqlTable('todo_items', {
+    taskKey: int('task_key', { unsigned: true }).autoincrement().primaryKey(),
+    userId: char('user_id', { length: 36 }).references(() => users.id, { onDelete: 'restrict' }),
     id: varchar('id', { length: 36 }),
     name: varchar('name', { length: 255 }),
     completed: boolean('completed'),
     deadline: varchar('deadline', { length: 255 }),
     priorisation: varchar('priorisation', { length: 255 }).$type<Priority>(),
-});
+}, table => [index('idx_todo_items_user').on(table.userId, table.taskKey)]);
 
 export const outboxEvents = mysqlTable(
     'outbox_events',

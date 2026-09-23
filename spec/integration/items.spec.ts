@@ -1,552 +1,175 @@
-import fs from 'fs';
-import path from 'path';
-import type { Connection } from 'mysql2/promise';
-import request, { type Response } from 'supertest';
-import { closePool, ensureEventSchema } from '../../src/infrastructure/db/mysql';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import type { Connection, RowDataPacket } from 'mysql2/promise';
+import request from 'supertest';
+import * as outbox from '../../src/infrastructure/outbox/outboxRepository.drizzle';
+import { init, teardown } from '../../src/infrastructure/db/drizzle';
 import { createApp } from './support/app';
-import {
-    connect,
-    countRows,
-    emptyTables,
-    insertTodoRows,
-    selectNameBytes,
-    selectOutboxRows,
-    selectTodoRows,
-} from './support/database';
-
-/*
- * Freezes the HTTP contract of /items as the MySQL deployment serves it today,
- * so that replacing the persistence layer cannot change it unnoticed.
- *
- * Tests titled "current behaviour, to be fixed" pin a behaviour that is wrong
- * but real. Fixing it is a separate change, which updates the test on purpose.
- */
-
-// src/persistence/index.ts picks the MySQL adapter, since MYSQL_HOST is set.
-import db from '../../src/persistence';
-
-const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const JSON_TYPE = 'application/json; charset=utf-8';
-const ID = '0f0f0f0f-0000-4000-8000-000000000001';
-const OTHER_ID = '0f0f0f0f-0000-4000-8000-000000000002';
-const SQL_LOOKING_ID = "x' OR '1'='1";
+import { connect, dropTables } from './support/database';
 
 const app = createApp();
 let connection: Connection;
-let serverErrors: jest.SpyInstance;
+const tables = ['todo_items', 'sessions', 'users', 'outbox_events', 'notifications', 'processed_events'];
+const fields = { name: 'My task', completed: false, deadline: '2026-10-01', priorisation: 'high' };
+let alice: ReturnType<typeof request.agent>;
+let bob: ReturnType<typeof request.agent>;
+let aliceId: string;
+let bobId: string;
+
+async function migrate(file: string) {
+    for (const sql of readFileSync(path.join(__dirname, '../../drizzle', file), 'utf8').split('--> statement-breakpoint')) {
+        if (sql.trim()) await connection.query(sql);
+    }
+}
+async function rows(sql: string): Promise<RowDataPacket[]> {
+    return (await connection.query<RowDataPacket[]>(sql))[0];
+}
 
 beforeAll(async () => {
-    // Start-up order of src/index.ts: persistence, then the event schema.
-    await db.init();
-    await ensureEventSchema();
     connection = await connect();
-});
-
-beforeEach(async () => {
-    await emptyTables(connection);
-    // Express's default handler logs every error it answers.
-    serverErrors = jest.spyOn(console, 'error').mockImplementation(() => {});
-});
-
-afterEach(() => {
-    serverErrors.mockRestore();
+    await dropTables(connection, tables);
+    await migrate('0000_silky_leo.sql');
+    await migrate('0001_auth.sql');
+    // Actual legacy edge cases: duplicate ids, a missing id, and NULL fields.
+    await connection.query("INSERT INTO todo_items (id, name, completed) VALUES ('duplicate', 'First', 0), ('duplicate', 'Second', 1), (NULL, NULL, NULL)");
+    await migrate('0002_task_ownership.sql');
+    await init();
 });
 
 afterAll(async () => {
-    await connection?.end();
-    await closePool();
-    await db.teardown();
+    await teardown();
+    if (connection) {
+        await dropTables(connection, tables);
+        // Restore the old schema used by the legacy adapter contract suites.
+        await migrate('0000_silky_leo.sql');
+        await connection.query('ALTER TABLE todo_items ADD deadline varchar(255), ADD priorisation varchar(255)');
+        await connection.end();
+    }
 });
 
-/**
- * The production error page: generic for the client, the actual cause logged
- * on the server only.
- */
-function expectGenericServerError(res: Response, loggedCause: RegExp): void {
-    expect(res.status).toBe(500);
-    expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
-    expect(res.text).toContain('<pre>Internal Server Error</pre>');
-    expect(res.text).not.toMatch(/ER_|sql|todo_items|outbox|too long|bind|TypeError|\.ts:\d+/i);
-    expect(serverErrors).toHaveBeenCalledWith(expect.stringMatching(loggedCause));
-}
-
-test('the application under test is wired like src/index.ts', () => {
-    // If this fails, src/index.ts changed: mirror the change in support/app.ts.
-    const source = fs.readFileSync(path.join(__dirname, '../../src/index.ts'), 'utf8');
-    const wiring = source
-        .split(/\r?\n/)
-        .map(line => line.trim())
-        .filter(line => /^app\.\w+\(/.test(line));
-
-    expect(wiring).toEqual([
-        'app.use(express.json());',
-        "app.get('/health', (_req: unknown, res: { json: (body: unknown) => void }) => res.json({ status: 'ok' }));",
-        "app.use(express.static(path.join(__dirname, '../dist')));",
-        "app.use('/auth', authRouter);",
-        "app.get('/items', getItems);",
-        "app.post('/items', addItem);",
-        "app.put('/items/:id', updateItem);",
-        "app.delete('/items/:id', deleteItem);",
-        "app.get('/todos', (_req: unknown, res: { sendFile: (file: string) => void }) => {",
-        "app.listen(3000, () => console.log('Listening on port 3000'));",
+test('migration preserves every legacy row and adds distinct keys without assigning owners', async () => {
+    const migrated = await rows('SELECT * FROM todo_items ORDER BY task_key');
+    expect(migrated).toHaveLength(3);
+    expect(migrated.map(row => [row.id, row.name, row.completed, row.user_id])).toEqual([
+        ['duplicate', 'First', 0, null], ['duplicate', 'Second', 1, null], [null, null, null, null],
     ]);
+    expect(new Set(migrated.map(row => row.task_key)).size).toBe(3);
 });
 
-describe('GET /items', () => {
-    test('answers 200 with an empty JSON array when there is no item', async () => {
-        const res = await request(app).get('/items');
-
-        expect(res.status).toBe(200);
-        expect(res.headers['content-type']).toBe(JSON_TYPE);
-        expect(res.text).toBe('[]');
-    });
-
-    test('returns every item with deadline and priorisation, in insertion order', async () => {
-        // No ORDER BY: InnoDB returns a table without primary key in insertion
-        // order, and the list users see relies on it.
-        await insertTodoRows(connection, [
-            ['cccccccc-0000-4000-8000-000000000003', 'inserted first', 0],
-            ['aaaaaaaa-0000-4000-8000-000000000001', 'inserted second', 1],
-            ['bbbbbbbb-0000-4000-8000-000000000002', 'inserted third', 0],
-        ]);
-
-        const res = await request(app).get('/items');
-
-        expect(res.status).toBe(200);
-        expect(res.headers['content-type']).toBe(JSON_TYPE);
-        expect(res.headers['x-powered-by']).toBe('Express');
-        // Compared as text: key order is part of the body, and so of its ETag.
-        expect(res.text).toBe(
-            JSON.stringify([
-                { id: 'cccccccc-0000-4000-8000-000000000003', name: 'inserted first', completed: false, deadline: null, priorisation: null },
-                { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'inserted second', completed: true, deadline: null, priorisation: null },
-                { id: 'bbbbbbbb-0000-4000-8000-000000000002', name: 'inserted third', completed: false, deadline: null, priorisation: null },
-            ]),
-        );
-    });
-
-    test('maps stored values: completed is true for 1 only, and NULL columns stay null', async () => {
-        await insertTodoRows(connection, [
-            ['completed-null', 'completed is NULL', null],
-            ['completed-two', 'completed is 2', 2],
-            ['name-null', null, 1],
-            [null, 'id is NULL', 0],
-        ]);
-
-        const res = await request(app).get('/items');
-
-        expect(res.status).toBe(200);
-        expect(res.text).toBe(
-            JSON.stringify([
-                { id: 'completed-null', name: 'completed is NULL', completed: false, deadline: null, priorisation: null },
-                { id: 'completed-two', name: 'completed is 2', completed: false, deadline: null, priorisation: null },
-                { id: 'name-null', name: null, completed: true, deadline: null, priorisation: null },
-                { id: null, name: 'id is NULL', completed: false, deadline: null, priorisation: null },
-            ]),
-        );
-    });
-
-    test('lists rows sharing an id as separate items (the table has no primary key)', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'first copy', 0],
-            [ID, 'second copy', 1],
-        ]);
-
-        const res = await request(app).get('/items');
-
-        expect(res.body).toEqual([
-            { id: ID, name: 'first copy', completed: false, deadline: null, priorisation: null },
-            { id: ID, name: 'second copy', completed: true, deadline: null, priorisation: null },
-        ]);
-    });
-
-    test('answers 304 to a conditional request while the list is unchanged', async () => {
-        await insertTodoRows(connection, [[ID, 'cached', 0]]);
-
-        const first = await request(app).get('/items');
-        expect(first.headers.etag).toMatch(/^W\/"[^"]+"$/);
-
-        const second = await request(app).get('/items').set('If-None-Match', first.headers.etag);
-        expect(second.status).toBe(304);
-        expect(second.text).toBe('');
-    });
+test('migration preserves deployments that already added deadline and priority manually', async () => {
+    await connection.query('DROP TABLE todo_items');
+    await connection.query('CREATE TABLE todo_items (id varchar(36), name varchar(255), completed boolean, deadline varchar(255), priorisation varchar(255))');
+    await connection.query("INSERT INTO todo_items VALUES ('existing', 'Keep all fields', 1, '2026-12-01', 'high')");
+    await migrate('0002_task_ownership.sql');
+    const [task] = await rows('SELECT * FROM todo_items');
+    expect(task).toMatchObject({ id: 'existing', name: 'Keep all fields', completed: 1, deadline: '2026-12-01', priorisation: 'high', user_id: null });
+    expect(task.task_key).toBeGreaterThan(0);
 });
 
-describe('POST /items', () => {
-    test('stores deadline and priorisation and returns them when listing items', async () => {
-        const input = { name: 'Planned task', deadline: '2026-10-01', priorisation: 'high' };
-        const res = await request(app).post('/items').send(input);
-
-        expect(res.status).toBe(200);
-        expect(res.body).toEqual({ id: expect.stringMatching(UUID_V4), ...input, completed: false });
-        const list = await request(app).get('/items');
-        expect(list.status).toBe(200);
-        expect(list.body).toEqual([res.body]);
-        const [rows] = await connection.query('SELECT deadline, priorisation FROM todo_items WHERE id = ?', [res.body.id]);
-        expect(rows).toEqual([{ deadline: input.deadline, priorisation: input.priorisation }]);
+describe('authenticated task API', () => {
+    beforeEach(async () => {
+        await connection.query('DELETE FROM todo_items');
+        await connection.query('DELETE FROM sessions');
+        await connection.query('DELETE FROM users');
+        await connection.query('DELETE FROM outbox_events');
+        alice = request.agent(app);
+        bob = request.agent(app);
+        const password = 'correct horse battery staple';
+        aliceId = (await alice.post('/auth/register').send({ email: 'alice@example.com', password })).body.user.id;
+        bobId = (await bob.post('/auth/register').send({ email: 'bob@example.com', password })).body.user.id;
     });
 
-    test('stores a new, not completed item and answers 200 with it', async () => {
-        const res = await request(app).post('/items').send({ name: 'Buy milk' });
-
-        expect(res.status).toBe(200);
-        expect(res.headers['content-type']).toBe(JSON_TYPE);
-        expect(res.body.id).toMatch(UUID_V4);
-        expect(res.text).toBe(JSON.stringify({ id: res.body.id, name: 'Buy milk', completed: false }));
-        expect(await selectTodoRows(connection)).toEqual([{ id: res.body.id, name: 'Buy milk', completed: 0 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
+    test('every operation requires a valid session', async () => {
+        for (const response of await Promise.all([
+            request(app).get('/items'), request(app).get('/items/unassigned'),
+            request(app).post('/items').send(fields), request(app).put('/items/1').send(fields),
+            request(app).delete('/items/1'), request(app).post('/items/1/claim'), request(app).patch('/items/1').send({ completed: true }),
+        ])) expect(response.status).toBe(401);
     });
 
-    test('gives each item its own id and appends it to the list', async () => {
-        const first = await request(app).post('/items').send({ name: 'first' });
-        const second = await request(app).post('/items').send({ name: 'second' });
-
-        expect(first.body.id).not.toBe(second.body.id);
-        const list = await request(app).get('/items');
-        expect(list.body).toEqual([
-            { ...first.body, deadline: null, priorisation: null },
-            { ...second.body, deadline: null, priorisation: null },
-        ]);
+    test('new tasks belong to the session user, ignoring supplied owner and id', async () => {
+        const created = await alice.post('/items').send({ ...fields, userId: bobId, id: 'spoof', completed: true });
+        expect(created.status).toBe(201);
+        expect(created.body).toMatchObject({ ...fields, userId: aliceId });
+        expect(created.body.id).toMatch(/^\d+$/);
+        expect((await alice.get('/items')).body).toEqual([created.body]);
+        expect((await bob.get('/items')).body).toEqual([]);
+        expect((await bob.get('/items/unassigned')).body).toEqual([]);
+        expect((await bob.put(`/items/${created.body.id}`).send(fields)).status).toBe(404);
+        expect((await bob.delete(`/items/${created.body.id}`)).status).toBe(404);
+        expect((await bob.post(`/items/${created.body.id}/claim`)).status).toBe(409);
+        expect((await alice.get('/items')).body).toEqual([created.body]);
     });
 
-    test('keeps accents, emoji and other scripts byte for byte', async () => {
-        const name = 'Café crème, déjà vu 🎉 日本語 👩🏽‍💻';
-
-        const res = await request(app).post('/items').send({ name });
-
-        expect(res.status).toBe(200);
-        expect(res.body.name).toBe(name);
-        expect(await selectNameBytes(connection, res.body.id)).toEqual([
-            Buffer.from(name, 'utf8').toString('hex').toUpperCase(),
-        ]);
-        const list = await request(app).get('/items');
-        expect(list.body).toEqual([{ id: res.body.id, name, completed: false, deadline: null, priorisation: null }]);
+    test('duplicate and missing legacy ids are individually claimable without editing their data', async () => {
+        await connection.query("INSERT INTO todo_items (id, name, completed) VALUES ('same', 'First', 0), ('same', 'Second', 1), (NULL, NULL, NULL)");
+        const tasks = (await alice.get('/items/unassigned')).body;
+        expect(tasks).toHaveLength(3);
+        expect((await alice.put(`/items/${tasks[0].id}`).send(fields)).status).toBe(404);
+        expect((await alice.delete(`/items/${tasks[0].id}`)).status).toBe(404);
+        expect((await alice.post(`/items/${tasks[0].id}/claim`)).status).toBe(204);
+        expect((await bob.post(`/items/${tasks[2].id}/claim`)).status).toBe(204);
+        expect((await bob.get('/items/unassigned')).body).toEqual([tasks[1]]);
+        expect((await alice.get('/items')).body).toEqual([{ ...tasks[0], userId: aliceId }]);
+        expect((await bob.get('/items')).body).toEqual([{ ...tasks[2], userId: bobId }]);
+        const stored = await rows('SELECT id, name, completed FROM todo_items ORDER BY task_key');
+        expect((await bob.patch(`/items/${tasks[2].id}`).send({ completed: true })).status).toBe(200);
+        expect((await alice.patch(`/items/${tasks[2].id}`).send({ completed: false })).status).toBe(404);
+        expect(stored).toEqual([{ id: 'same', name: 'First', completed: 0 }, { id: 'same', name: 'Second', completed: 1 }, { id: null, name: null, completed: null }]);
     });
 
-    test('accepts a name of 255 characters, each emoji counting as one', async () => {
-        const name = '😀'.repeat(255);
-
-        const res = await request(app).post('/items').send({ name });
-
-        expect(res.status).toBe(200);
-        expect(await selectTodoRows(connection)).toEqual([{ id: res.body.id, name, completed: 0 }]);
+    test('concurrent claims have exactly one winner and cannot transfer ownership', async () => {
+        await connection.query("INSERT INTO todo_items (name) VALUES ('Claim me')");
+        const [task] = (await alice.get('/items/unassigned')).body;
+        const results = await Promise.all([alice.post(`/items/${task.id}/claim`), bob.post(`/items/${task.id}/claim`)]);
+        expect(results.map(result => result.status).sort()).toEqual([204, 409]);
+        const owner = results[0].status === 204 ? aliceId : bobId;
+        expect((await rows('SELECT user_id FROM todo_items'))[0].user_id).toBe(owner);
+        expect((await alice.post(`/items/${task.id}/claim`)).status).toBe(409);
+        expect((await bob.post(`/items/${task.id}/claim`)).status).toBe(409);
+        expect((await alice.get('/items/unassigned')).body).toEqual([]);
     });
 
-    test('answers 400 to malformed JSON without touching the database', async () => {
-        const res = await request(app)
-            .post('/items')
-            .set('Content-Type', 'application/json')
-            .send('{"name":');
-
-        expect(res.status).toBe(400);
-        expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
-        expect(res.text).toContain('<pre>Bad Request</pre>');
-        expect(await countRows(connection, 'todo_items')).toBe(0);
-    });
-
-    test('current behaviour, to be fixed: a name over 255 characters answers 500 and stores nothing', async () => {
-        const res = await request(app).post('/items').send({ name: 'a'.repeat(256) });
-
-        expectGenericServerError(res, /Data too long for column 'name'/);
-        expect(await countRows(connection, 'todo_items')).toBe(0);
-    });
-
-    test('current behaviour, to be fixed: without a name, answers 200 and stores NULL', async () => {
-        const res = await request(app).post('/items').send({});
-
-        expect(res.status).toBe(200);
-        expect(res.text).toBe(JSON.stringify({ id: res.body.id, completed: false }));
-        expect(await selectTodoRows(connection)).toEqual([{ id: res.body.id, name: null, completed: 0 }]);
-    });
-
-    test.each([
-        { given: 'a number', name: 42, stored: '42' },
-        { given: 'a boolean', name: true, stored: '1' },
-        { given: 'an object', name: { a: 1 }, stored: '[object Object]' },
-    ])(
-        'current behaviour, to be fixed: $given as name is stored as $stored but echoed as sent',
-        async ({ name, stored }) => {
-            const res = await request(app).post('/items').send({ name });
-
-            expect(res.status).toBe(200);
-            expect(res.body).toEqual({ id: expect.stringMatching(UUID_V4), name, completed: false });
-            expect(await selectTodoRows(connection)).toEqual([{ id: res.body.id, name: stored, completed: 0 }]);
-        },
-    );
-
-    test('current behaviour, to be fixed: an array as name answers 500 and stores nothing', async () => {
-        const res = await request(app).post('/items').send({ name: ['a', 'b'] });
-
-        expectGenericServerError(res, /Column count doesn't match value count/);
-        expect(await countRows(connection, 'todo_items')).toBe(0);
-    });
-
-    test('current behaviour, to be fixed: without a JSON body, answers 500 and stores nothing', async () => {
-        const res = await request(app).post('/items');
-
-        expectGenericServerError(res, /Cannot read properties of undefined \(reading 'name'\)/);
-        expect(await countRows(connection, 'todo_items')).toBe(0);
-    });
-});
-
-describe('PUT /items/:id', () => {
-    test('updates the item and answers 200 with it', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'Old name', 0],
-            [OTHER_ID, 'Untouched', 0],
-        ]);
-
-        const res = await request(app).put(`/items/${ID}`).send({ name: 'New name', completed: false });
-
-        expect(res.status).toBe(200);
-        expect(res.headers['content-type']).toBe(JSON_TYPE);
-        expect(res.text).toBe(JSON.stringify({ id: ID, name: 'New name', completed: false }));
-        expect(await selectTodoRows(connection)).toEqual([
-            { id: ID, name: 'New name', completed: 0 },
-            { id: OTHER_ID, name: 'Untouched', completed: 0 },
-        ]);
-    });
-
-    test('answers 404 {"error":"Item not found"} for an unknown id and writes nothing', async () => {
-        await insertTodoRows(connection, [[ID, 'Existing', 0]]);
-
-        for (const id of ['unknown-id', SQL_LOOKING_ID]) {
-            const res = await request(app)
-                .put(`/items/${encodeURIComponent(id)}`)
-                .send({ name: 'x', completed: true });
-
-            expect(res.status).toBe(404);
-            expect(res.headers['content-type']).toBe(JSON_TYPE);
-            expect(res.text).toBe('{"error":"Item not found"}');
+    test('owner edits retain deadlines and priorities and emit one completion event with their identity', async () => {
+        const created = await alice.post('/items').send(fields);
+        const update = { ...fields, name: 'Done', completed: true, deadline: '2026-10-02', priorisation: 'low', userId: bobId };
+        for (let i = 0; i < 2; i++) {
+            const result = await alice.put(`/items/${created.body.id}`).send(update);
+            expect(result.status).toBe(200);
+            expect(result.body).toMatchObject({ ...update, userId: aliceId });
         }
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'Existing', completed: 0 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
+        const events = await rows('SELECT actor_id, aggregate_id FROM outbox_events');
+        expect(events).toEqual([{ actor_id: aliceId, aggregate_id: created.body.id }]);
+        expect((await alice.delete(`/items/${created.body.id}`)).status).toBe(204);
+        expect((await alice.get('/items')).body).toEqual([]);
     });
 
-    test('answers 404 for an unknown id even without a name', async () => {
-        await insertTodoRows(connection, [[ID, 'Existing', 0]]);
-
-        const res = await request(app).put('/items/unknown-id').send({ completed: true });
-
-        expect(res.status).toBe(404);
-        expect(res.text).toBe('{"error":"Item not found"}');
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'Existing', completed: 0 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
+    test('a failed completion event rolls back the task update', async () => {
+        const created = await alice.post('/items').send(fields);
+        const enqueue = jest.spyOn(outbox, 'enqueue').mockRejectedValueOnce(new Error('outbox unavailable'));
+        const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            expect((await alice.patch(`/items/${created.body.id}`).send({ completed: true })).status).toBe(500);
+            expect((await alice.get('/items')).body[0].completed).toBe(false);
+            expect(await rows('SELECT * FROM outbox_events')).toEqual([]);
+        } finally { enqueue.mockRestore(); logged.mockRestore(); }
     });
 
-    test('keeps accents and emoji', async () => {
-        await insertTodoRows(connection, [[ID, 'plain', 0]]);
-        const name = 'Réunion à 14 h ☕️ — 会議';
-
-        const res = await request(app).put(`/items/${ID}`).send({ name, completed: false });
-
-        expect(res.body).toEqual({ id: ID, name, completed: false });
-        expect(await selectNameBytes(connection, ID)).toEqual([Buffer.from(name, 'utf8').toString('hex').toUpperCase()]);
-        expect((await request(app).get('/items')).body).toEqual([{ id: ID, name, completed: false, deadline: null, priorisation: null }]);
+    test('deleting an owner cannot turn private tasks into shared unassigned tasks', async () => {
+        await alice.post('/items').send(fields);
+        await expect(connection.query('DELETE FROM users WHERE id = ?', [aliceId]))
+            .rejects.toMatchObject({ code: 'ER_ROW_IS_REFERENCED_2' });
+        expect((await alice.get('/items')).body).toHaveLength(1);
+        expect((await bob.get('/items/unassigned')).body).toEqual([]);
     });
 
-    test('completing an item answers completed: true and records one task.completed event', async () => {
-        await insertTodoRows(connection, [[ID, 'Ship it 🚀', 0]]);
-        const before = Date.now();
-
-        const res = await request(app)
-            .put(`/items/${ID}`)
-            .set('X-Correlation-Id', 'request-42')
-            .send({ name: 'Ship it 🚀', completed: true });
-
-        const after = Date.now();
-        expect(res.status).toBe(200);
-        expect(res.text).toBe(JSON.stringify({ id: ID, name: 'Ship it 🚀', completed: true }));
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'Ship it 🚀', completed: 1 }]);
-
-        const events = await selectOutboxRows(connection);
-        expect(events).toHaveLength(1);
-        const [event] = events;
-        expect(event).toMatchObject({
-            type: 'task.completed',
-            version: 1,
-            aggregate_id: ID,
-            correlation_id: 'request-42',
-            actor_id: null,
-            published_at: null,
-        });
-        expect(event.event_id).toMatch(UUID_V4);
-        expect(event.occurred_at.getTime()).toBeGreaterThanOrEqual(before);
-        expect(event.occurred_at.getTime()).toBeLessThanOrEqual(after);
-        expect(event.payload).toEqual({ taskId: ID, name: 'Ship it 🚀', completedAt: expect.any(String) });
-        const completedAt = Date.parse((event.payload as { completedAt: string }).completedAt);
-        expect(completedAt).toBeGreaterThanOrEqual(before);
-        expect(completedAt).toBeLessThanOrEqual(after);
-    });
-
-    test('without X-Correlation-Id, the event carries a generated UUID', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-        await request(app).put(`/items/${ID}`).send({ name: 'task', completed: true });
-
-        const [event] = await selectOutboxRows(connection);
-        expect(event.correlation_id).toMatch(UUID_V4);
-    });
-
-    test('records no event when the item was already completed, or is not being completed', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'done', 1],
-            [OTHER_ID, 'open', 0],
-        ]);
-
-        const responses = [
-            await request(app).put(`/items/${ID}`).send({ name: 'done', completed: true }),
-            await request(app).put(`/items/${ID}`).send({ name: 'done', completed: false }),
-            await request(app).put(`/items/${OTHER_ID}`).send({ name: 'still open', completed: false }),
-        ];
-
-        expect(responses.map(res => res.status)).toEqual([200, 200, 200]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
-    });
-
-    test('concurrent completions of one item record a single event', async () => {
-        await insertTodoRows(connection, [[ID, 'race', 0]]);
-
-        const responses = await Promise.all(
-            Array.from({ length: 5 }, () => request(app).put(`/items/${ID}`).send({ name: 'race', completed: true })),
-        );
-
-        expect(responses.map(res => res.status)).toEqual([200, 200, 200, 200, 200]);
-        expect(await countRows(connection, 'outbox_events')).toBe(1);
-    });
-
-    test('updates every row sharing the id and records one event (the table has no primary key)', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'copy A', 0],
-            [ID, 'copy B', 0],
-        ]);
-
-        const res = await request(app).put(`/items/${ID}`).send({ name: 'merged', completed: true });
-
-        expect(res.status).toBe(200);
-        expect(await selectTodoRows(connection)).toEqual([
-            { id: ID, name: 'merged', completed: 1 },
-            { id: ID, name: 'merged', completed: 1 },
-        ]);
-        expect(await countRows(connection, 'outbox_events')).toBe(1);
-    });
-
-    test('current behaviour, to be fixed: completed "false" (a string) completes the item', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-        const res = await request(app).put(`/items/${ID}`).send({ name: 'task', completed: 'false' });
-
-        expect(res.body).toEqual({ id: ID, name: 'task', completed: true });
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'task', completed: 1 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(1);
-    });
-
-    test('current behaviour, to be fixed: without completed, the item is marked not completed', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 1]]);
-
-        const res = await request(app).put(`/items/${ID}`).send({ name: 'renamed' });
-
-        expect(res.body).toEqual({ id: ID, name: 'renamed', completed: false });
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'renamed', completed: 0 }]);
-    });
-
-    test('current behaviour, to be fixed: without a name, answers 500 and changes nothing', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-        const res = await request(app).put(`/items/${ID}`).send({ completed: true });
-
-        expectGenericServerError(res, /Bind parameters must not contain undefined/);
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'task', completed: 0 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
-    });
-
-    test.each([
-        { given: 'a number', name: 42, stored: '42' },
-        { given: 'a boolean', name: true, stored: '1' },
-        { given: 'an object', name: { a: 1 }, stored: '{"a":1}' },
-        { given: 'null', name: null, stored: null },
-    ])(
-        'current behaviour, to be fixed: $given as name is stored as $stored but echoed as sent',
-        async ({ name, stored }) => {
-            await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-            const res = await request(app).put(`/items/${ID}`).send({ name, completed: false });
-
-            expect(res.status).toBe(200);
-            expect(res.text).toBe(JSON.stringify({ id: ID, name, completed: false }));
-            expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: stored, completed: 0 }]);
-        },
-    );
-
-    test('current behaviour, to be fixed: an X-Correlation-Id over 64 characters makes a completion fail with 500 and change nothing', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-        const completion = await request(app)
-            .put(`/items/${ID}`)
-            .set('X-Correlation-Id', 'x'.repeat(65))
-            .send({ name: 'renamed', completed: true });
-
-        expectGenericServerError(completion, /Data too long for column 'correlation_id'/);
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'task', completed: 0 }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
-
-        // Without a completion there is no event to store, and the header is ignored.
-        const rename = await request(app)
-            .put(`/items/${ID}`)
-            .set('X-Correlation-Id', 'x'.repeat(65))
-            .send({ name: 'renamed', completed: false });
-        expect(rename.status).toBe(200);
-    });
-
-    test('current behaviour, to be fixed: without a JSON body, answers 500 and changes nothing', async () => {
-        await insertTodoRows(connection, [[ID, 'task', 0]]);
-
-        const res = await request(app).put(`/items/${ID}`);
-
-        expectGenericServerError(res, /Cannot read properties of undefined \(reading 'name'\)/);
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'task', completed: 0 }]);
-    });
-});
-
-describe('DELETE /items/:id', () => {
-    test('removes the item and answers 200 "OK" as plain text', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'to delete', 0],
-            [OTHER_ID, 'kept', 1],
-        ]);
-
-        const res = await request(app).delete(`/items/${ID}`);
-
-        expect(res.status).toBe(200);
-        expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
-        expect(res.text).toBe('OK');
-        expect(await selectTodoRows(connection)).toEqual([{ id: OTHER_ID, name: 'kept', completed: 1 }]);
-        expect((await request(app).get('/items')).body).toEqual([{ id: OTHER_ID, name: 'kept', completed: true, deadline: null, priorisation: null }]);
-        expect(await countRows(connection, 'outbox_events')).toBe(0);
-    });
-
-    test('answers 200 "OK" for an unknown id and deletes nothing', async () => {
-        await insertTodoRows(connection, [[ID, 'kept', 0]]);
-
-        for (const id of ['unknown-id', SQL_LOOKING_ID]) {
-            const res = await request(app).delete(`/items/${encodeURIComponent(id)}`);
-
-            expect(res.status).toBe(200);
-            expect(res.text).toBe('OK');
-        }
-        expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'kept', completed: 0 }]);
-    });
-
-    test('removes every row sharing the id', async () => {
-        await insertTodoRows(connection, [
-            [ID, 'copy A', 0],
-            [OTHER_ID, 'kept', 0],
-            [ID, 'copy B', 1],
-        ]);
-
-        const res = await request(app).delete(`/items/${ID}`);
-
-        expect(res.status).toBe(200);
-        expect(await selectTodoRows(connection)).toEqual([{ id: OTHER_ID, name: 'kept', completed: 0 }]);
+    test('invalid input and forged or expired sessions cannot mutate tasks', async () => {
+        expect((await alice.post('/items').send({ ...fields, name: '' })).status).toBe(400);
+        expect((await alice.post('/items').send({ ...fields, deadline: 'not-a-date' })).status).toBe(400);
+        expect((await alice.post('/items/1e0/claim')).status).toBe(404);
+        expect((await request(app).get('/items').set('Cookie', 'sid=forged')).status).toBe(401);
+        await connection.query('UPDATE sessions SET expires_at = ?', [new Date(0)]);
+        expect((await alice.get('/items')).status).toBe(401);
+        expect((await alice.post('/items/1/claim')).status).toBe(401);
     });
 });

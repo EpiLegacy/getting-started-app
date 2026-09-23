@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { transaction } from '../../../infrastructure/db/drizzle';
 import { enqueue } from '../../../infrastructure/outbox/outboxRepository.drizzle';
-import { todoItems } from '../../../infrastructure/db/schema';
+import { legacyTodoItems as todoItems } from '../../../persistence/legacySchema';
 import { createEvent } from '../../../shared/events/envelope';
 import { TASK_COMPLETED, eventCatalog, type TaskCompletedPayload } from '../../../shared/events/catalog';
 import type { UpdatedTask, UpdateTaskInput } from './updateTask';

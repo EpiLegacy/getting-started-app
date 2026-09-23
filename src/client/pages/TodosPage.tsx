@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
+  Alert,
+  CircularProgress,
   Box,
   Button,
   Checkbox,
@@ -25,14 +27,14 @@ import '../features/todos/todos.css';
 import AddItem from '../features/todos/components/AddItem';
 import React from 'react';
 import { itemsApi } from '../features/todos/api/itemsApi';
-import type { Item } from '../../types';
+import { useTasks } from '../features/todos/useTasks';
+import UnassignedTasks from '../features/todos/components/UnassignedTasks';
 
 type SortKey = 'deadline' | 'priorisation';
 
 export default function TodosPage() {
-  const [items, setItems] = useState<Item[]>([]);
+  const { items, unassigned, loading, pending, error, refresh, mutate } = useTasks();
   const [open, setOpen] = useState<boolean>(false);
-  const [refresh, setRefresh] = useState<boolean>(false);
   const handleOpen = () => setOpen(true);
   const handleClose = () => setOpen(false);
   const [search, setSearch] = useState('');
@@ -40,13 +42,6 @@ export default function TodosPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
-
-  useEffect(() => {
-    itemsApi
-      .getAll()
-      .then(setItems)
-
-  }, [refresh]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -90,9 +85,10 @@ export default function TodosPage() {
       : -comparison;
   });
 
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(sortedItems.length / rowsPerPage) - 1));
   const paginatedItems = sortedItems.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
+    currentPage * rowsPerPage,
+    currentPage * rowsPerPage + rowsPerPage
   );
 
   const handleChangePage = (
@@ -109,30 +105,10 @@ export default function TodosPage() {
     setPage(0);
   };
 
-  const handleDeleteItem = (id: string) => {
-    itemsApi.remove(id);
-    setRefresh(!refresh);
-  }
-
+  const handleDeleteItem = (id: string) => mutate(() => itemsApi.remove(id));
   const handleCheckboxChange = (id: string) => {
-    setItems((prevItems) => {
-      const updatedItems = prevItems.map((item) =>
-        item.id === id
-          ? {
-            ...item,
-            completed: !item.completed,
-          }
-          : item
-      );
-      const updatedItem = updatedItems.find((item) => item.id === id);
-      if (updatedItem) {
-        itemsApi.update(updatedItem);
-      }
-
-      return [...updatedItems].sort(
-        (a, b) => Number(a.completed) - Number(b.completed)
-      );
-    });
+    const item = items.find(item => item.id === id);
+    if (item) void mutate(() => itemsApi.setCompleted(item.id, !item.completed));
   };
 
   return (
@@ -151,9 +127,11 @@ export default function TodosPage() {
         }}
       >
         <Typography variant="h5" sx={{ mb: 2, textAlign: 'center' }}>
-          Todo List
+          My tasks
         </Typography>
 
+        {error && <Alert severity="error" action={<Button onClick={refresh}>Retry</Button>} sx={{ mb: 2 }}>{error}</Alert>}
+        {loading && <CircularProgress aria-label="Loading tasks" size={24} />}
         <Box
           sx={{
             display: 'flex',
@@ -182,6 +160,7 @@ export default function TodosPage() {
             }}
           />
           <Button
+            disabled={loading || pending}
             onClick={handleOpen}
             variant="contained"
           >
@@ -192,9 +171,9 @@ export default function TodosPage() {
         <AddItem
           open={open}
           handleClose={handleClose}
-          refresh={refresh}
-          setRefresh={setRefresh}
+          onCreated={refresh}
         />
+        {!loading && filteredItems.length === 0 && <Typography sx={{ my: 2 }}>{items.length ? 'No matching tasks.' : 'No tasks yet. Add one or claim an unassigned task below.'}</Typography>}
         <TableContainer component={Paper}>
           <Table sx={{ minWidth: 650 }}>
             <TableHead>
@@ -260,13 +239,13 @@ export default function TodosPage() {
                   }
                 >
                   <TableCell>
-                    {row.name}
+                    {row.name || 'Untitled task'}
                   </TableCell>
 
                   <TableCell>
-                    {new Date(row.deadline).toLocaleDateString(
+                    {row.deadline ? new Date(row.deadline).toLocaleDateString(
                       'fr-FR'
-                    )}
+                    ) : '—'}
                   </TableCell>
 
                   <TableCell>
@@ -275,6 +254,8 @@ export default function TodosPage() {
 
                   <TableCell>
                     <Checkbox
+                      disabled={loading || pending}
+                      slotProps={{ input: { 'aria-label': `Mark ${row.name} ${row.completed ? 'incomplete' : 'complete'}` } }}
                       checked={row.completed}
                       onChange={() => handleCheckboxChange(row.id) }
                     />
@@ -282,7 +263,8 @@ export default function TodosPage() {
 
                   <TableCell>
                     <IconButton
-                      aria-label="delete"
+                      disabled={loading || pending}
+                      aria-label={`Delete ${row.name}`}
                       onClick={() => {
                         handleDeleteItem(row.id)
                       }}
@@ -298,17 +280,19 @@ export default function TodosPage() {
           <TablePagination
             component="div"
             count={filteredItems.length}
-            page={page}
+            page={currentPage}
             onPageChange={handleChangePage}
             rowsPerPage={rowsPerPage}
             onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[5, 10, 25, filteredItems.length]}
+            rowsPerPageOptions={[5, 10, 25]}
             labelRowsPerPage="Lignes par page"
             labelDisplayedRows={({ from, to, count }) =>
               `${from}-${to} sur ${count}`
             }
           />
         </TableContainer>
+        {!loading && <UnassignedTasks tasks={unassigned} disabled={pending}
+          onClaim={id => { void mutate(() => itemsApi.claim(id)); }} />}
       </Box>
     </Box>
   );

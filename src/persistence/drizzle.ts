@@ -7,7 +7,7 @@ import {
     unwrapErrors,
 } from '../infrastructure/db/drizzle';
 
-import { todoItems } from '../infrastructure/db/schema';
+import { legacyTodoItems as todoItems } from './legacySchema';
 
 import type {
     Item,
@@ -44,6 +44,8 @@ async function teardown(): Promise<void> {
  * effectively coerces NULL to false too (`item.completed === 1`), so this
  * mirrors that instead of leaking `null` through the Persistence interface.
  */
+// The legacy contract can return NULL despite its historical string types.
+// Preserve those values here; the authenticated repository normalizes its DTOs.
 function toStoredItem(row: {
     id: string | null;
     name: string | null;
@@ -52,10 +54,10 @@ function toStoredItem(row: {
     priorisation: Priority | null;
 }): StoredItem {
     return {
-        id: row.id ?? '',
-        name: row.name ?? '',
+        id: row.id as string,
+        name: row.name as string,
         completed: row.completed === true,
-        deadline: row.deadline ?? '',
+        deadline: row.deadline as string,
         priorisation: row.priorisation as Priority,
     };
 }
