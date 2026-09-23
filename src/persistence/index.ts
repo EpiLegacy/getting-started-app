@@ -1,3 +1,6 @@
+import sqlite from './sqlite';
+import drizzle from './drizzle';
+import mysql from './mysql';
 import type { Persistence } from '../types';
 import { resolvePersistenceDriver } from '../shared/persistenceDriver';
 
@@ -6,9 +9,9 @@ import { resolvePersistenceDriver } from '../shared/persistenceDriver';
 const driver = resolvePersistenceDriver();
 
 const persistence: Persistence = !process.env.MYSQL_HOST
-    ? require('./sqlite')
+    ? sqlite
     : driver === 'drizzle'
-      ? require('./drizzle')
-      : require('./mysql');
+      ? drizzle
+      : mysql;
 
 export = persistence;

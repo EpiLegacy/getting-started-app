@@ -1,14 +1,14 @@
 export {};
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 const previousLocation = process.env.SQLITE_DB_LOCATION;
 const previousNodeEnv = process.env.NODE_ENV;
 const testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'todo-test-'));
 const location = path.join(testRoot, 'todo.db');
 process.env.SQLITE_DB_LOCATION = location;
-const db = require('../../src/persistence/sqlite');
+const db = jest.requireActual('../../src/persistence/sqlite');
 
 const ITEM = {
     id: '7aef3d7c-d301-4846-8358-2a91ec9d6be3',
@@ -52,7 +52,7 @@ test('it can create directory if do not exist', async () => {
 
     jest.resetModules();
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     expect(fs.existsSync(testDir)).toBe(false);
 
@@ -150,7 +150,7 @@ test('it rejects when database cannot be opened', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await expect(database.init()).rejects.toThrow(
         'Database open error',
@@ -176,7 +176,7 @@ test('it rejects when table creation fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await expect(database.init()).rejects.toThrow(
         'Create table error',
@@ -205,7 +205,7 @@ test('it rejects when closing database fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -236,7 +236,7 @@ test('it rejects when getItems fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -267,7 +267,7 @@ test('it rejects when getItem fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -307,7 +307,7 @@ test('it rejects when storing an item fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -347,7 +347,7 @@ test('it rejects when updating an item fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -390,7 +390,7 @@ test('it rejects when removing an item fails', async () => {
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 
@@ -424,7 +424,7 @@ test('it uses the default database location when SQLITE_DB_LOCATION is not defin
         }),
     }));
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     jest.spyOn(fs, 'existsSync').mockReturnValue(true);
     await database.init();
@@ -452,7 +452,7 @@ test('it logs database location when NODE_ENV is not test', async () => {
         .spyOn(console, 'log')
         .mockImplementation(() => {});
 
-    const database = require('../../src/persistence/sqlite');
+    const database = jest.requireActual('../../src/persistence/sqlite');
 
     await database.init();
 

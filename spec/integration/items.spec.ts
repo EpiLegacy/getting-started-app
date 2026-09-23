@@ -23,7 +23,7 @@ import {
  */
 
 // src/persistence/index.ts picks the MySQL adapter, since MYSQL_HOST is set.
-const db = require('../../src/persistence');
+import db from '../../src/persistence';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const JSON_TYPE = 'application/json; charset=utf-8';
@@ -81,6 +81,7 @@ test('the application under test is wired like src/index.ts', () => {
     expect(wiring).toEqual([
         'app.use(express.json());',
         "app.use(express.static(path.join(__dirname, '../dist')));",
+        "app.use('/auth', authRouter);",
         "app.get('/items', getItems);",
         "app.post('/items', addItem);",
         "app.put('/items/:id', updateItem);",

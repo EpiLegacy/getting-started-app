@@ -1,6 +1,7 @@
-const db = require('../../src/persistence');
+import type { Request, Response } from 'express';
+const db = jest.requireMock('../../src/persistence');
 export {};
-const updateItem = require('../../src/routes/updateItem');
+import updateItem from '../../src/routes/updateItem';
 const ITEM = { id: 12345 };
 
 jest.mock('../../src/persistence', () => ({
@@ -17,7 +18,7 @@ test('it updates items correctly', async () => {
 
     db.getItem.mockReturnValue(Promise.resolve(ITEM));
 
-    await updateItem(req, res);
+    await updateItem(req as unknown as Request<{ id: string }>, res as unknown as Response);
 
     expect(db.updateItem.mock.calls.length).toBe(1);
     expect(db.updateItem.mock.calls[0][0]).toBe(req.params.id);

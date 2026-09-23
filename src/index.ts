@@ -1,20 +1,32 @@
-const express = require('express');
-const path = require('path');
+import express from 'express';
+import path from 'path';
 const app = express();
-const db = require('./persistence');
-const getItems = require('./routes/getItems');
-const addItem = require('./routes/addItem');
-const updateItem = require('./routes/updateItem');
-const deleteItem = require('./routes/deleteItem');
+import db from './persistence';
+import getItems from './routes/getItems';
+import addItem from './routes/addItem';
+import updateItem from './routes/updateItem';
+import deleteItem from './routes/deleteItem';
 import { closePool, ensureEventSchema, isMysqlConfigured } from './infrastructure/db/mysql';
-import { init as initDrizzlePool } from './infrastructure/db/drizzle';
+import { init as initDrizzlePool, isDrizzleConfigured } from './infrastructure/db/drizzle';
 import { RabbitmqPublisher } from './infrastructure/messaging/rabbitmqPublisher';
 import { startOutboxRelay, type RunningRelay } from './infrastructure/outbox/relay';
 import { startOutboxRelay as startOutboxRelayDrizzle } from './infrastructure/outbox/relay.drizzle';
 import { resolvePersistenceDriver } from './shared/persistenceDriver';
+import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
+import { createAuthRouter } from './modules/auth/routes';
+import { createAuthService } from './modules/auth/service';
+
+// Accounts live in MySQL only (ADR 0001). The session cookie is Secure in the
+// production image unless SESSION_COOKIE_SECURE=false, for a demo served over
+// plain HTTP on something other than localhost.
+const authRouter = createAuthRouter(
+    isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined,
+    { secureCookies: process.env.NODE_ENV === 'production' && process.env.SESSION_COOKIE_SECURE !== 'false' },
+);
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
+app.use('/auth', authRouter);
 
 app.get('/items', getItems);
 app.post('/items', addItem);
@@ -51,7 +63,13 @@ async function startEventing(): Promise<void> {
     console.log('Outbox relay started');
 }
 
+// The auth repository uses the Drizzle pool whatever PERSISTENCE_DRIVER says.
+async function startAuth(): Promise<void> {
+    if (isDrizzleConfigured()) await initDrizzlePool();
+}
+
 db.init()
+    .then(startAuth)
     .then(startEventing)
     .then(() => {
         app.listen(3000, () => console.log('Listening on port 3000'));

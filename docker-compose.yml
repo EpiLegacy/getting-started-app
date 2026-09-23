@@ -110,9 +110,15 @@ services:
       MYSQL_DB: ${MYSQL_DB:-todos}
 
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
-
-      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-drizzle}
-
+      # legacy|drizzle (ADR 0001). Unset here defaults to legacy in the app
+      # itself; run `npm run db:migrate` against this database first if you
+      # switch to drizzle — it never creates tables on its own.
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
+      # This stack serves plain HTTP, and a Secure session cookie is dropped
+      # over HTTP by some browsers even on localhost. Any exposed deployment
+      # serves HTTPS and leaves this unset, which keeps the cookie Secure.
+      # /auth needs the users and sessions tables: `npm run db:migrate` first.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
     depends_on:
       migration:
         condition: service_completed_successfully
