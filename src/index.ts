@@ -14,6 +14,11 @@ import { startOutboxRelay as startOutboxRelayDrizzle } from './infrastructure/ou
 import { resolvePersistenceDriver } from './shared/persistenceDriver';
 
 app.use(express.json());
+// Liveness for the Docker HEALTHCHECK and the CI smoke test. The server only
+// listens once persistence and eventing have started, so any answer means
+// start-up succeeded. Anonymous and free of I/O on purpose: a probe must
+// neither need an account nor fail because MySQL is slow for a moment.
+app.get('/health', (_req: unknown, res: { json: (body: unknown) => void }) => res.json({ status: 'ok' }));
 app.use(express.static(path.join(__dirname, '../dist')));
 
 app.get('/items', getItems);
