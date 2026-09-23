@@ -1,3 +1,4 @@
+import http from 'http';
 import express from 'express';
 import request from 'supertest';
 import { createAuthRouter } from '../../../src/modules/auth/routes';
@@ -7,11 +8,24 @@ import { FakeRepository, fakeHasher } from './fakes';
 
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
-function app({
+/*
+ * One real server per test, listening before the first request. Handing
+ * supertest the bare Express app makes it open and close a server on a fresh
+ * ephemeral port for every request, and under a quick burst of requests a
+ * recycled port occasionally answered with something that is not HTTP
+ * ("Parse Error: Expected HTTP/").
+ */
+const servers: http.Server[] = [];
+
+afterEach(async () => {
+    await Promise.all(servers.splice(0).map(server => new Promise(resolve => server.close(resolve))));
+});
+
+async function app({
     secureCookies = false,
     withService = true,
     throttle,
-}: { secureCookies?: boolean; withService?: boolean; throttle?: AuthThrottle } = {}) {
+}: { secureCookies?: boolean; withService?: boolean; throttle?: AuthThrottle } = {}): Promise<http.Server> {
     let tokens = 0;
     const service = createAuthService(new FakeRepository(), {
         hasher: fakeHasher,
@@ -22,7 +36,11 @@ function app({
     app.set('trust proxy', true);
     app.use(express.json());
     app.use('/auth', createAuthRouter(withService ? service : undefined, { secureCookies, throttle }));
-    return app;
+
+    const server = http.createServer(app);
+    servers.push(server);
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    return server;
 }
 
 function sessionCookie(res: request.Response): string {
@@ -32,7 +50,7 @@ function sessionCookie(res: request.Response): string {
 
 describe('POST /auth/register', () => {
     test('answers 201 with the user and sets the session cookie', async () => {
-        const res = await request(app()).post('/auth/register').send(ALICE);
+        const res = await request(await app()).post('/auth/register').send(ALICE);
 
         expect(res.status).toBe(201);
         expect(res.body).toEqual({ user: { id: expect.any(String), email: 'alice@example.com' } });
@@ -40,20 +58,20 @@ describe('POST /auth/register', () => {
     });
 
     test('never returns the password or its hash', async () => {
-        const res = await request(app()).post('/auth/register').send(ALICE);
+        const res = await request(await app()).post('/auth/register').send(ALICE);
 
         expect(res.text).not.toContain('correct horse');
         expect(res.text).not.toContain('hashed:');
     });
 
     test('sets the Secure attribute when configured to', async () => {
-        const res = await request(app({ secureCookies: true })).post('/auth/register').send(ALICE);
+        const res = await request(await app({ secureCookies: true })).post('/auth/register').send(ALICE);
 
         expect(sessionCookie(res)).toContain('; Secure');
     });
 
     test('answers 409 when the email already has an account', async () => {
-        const server = app();
+        const server = await app();
         await request(server).post('/auth/register').send(ALICE);
 
         const res = await request(server).post('/auth/register').send({ ...ALICE, email: 'ALICE@example.com' });
@@ -64,7 +82,7 @@ describe('POST /auth/register', () => {
     });
 
     test('answers 400 and names the fields that are wrong', async () => {
-        const res = await request(app()).post('/auth/register').send({ email: 'alice', password: 'short' });
+        const res = await request(await app()).post('/auth/register').send({ email: 'alice', password: 'short' });
 
         expect(res.status).toBe(400);
         expect(res.body.error).toBe('invalid_request');
@@ -72,7 +90,7 @@ describe('POST /auth/register', () => {
     });
 
     test('answers 400 without a JSON body', async () => {
-        const res = await request(app()).post('/auth/register');
+        const res = await request(await app()).post('/auth/register');
 
         expect(res.status).toBe(400);
     });
@@ -80,7 +98,7 @@ describe('POST /auth/register', () => {
 
 describe('POST /auth/login', () => {
     test('answers 200 and sets a new session cookie', async () => {
-        const server = app();
+        const server = await app();
         await request(server).post('/auth/register').send(ALICE);
 
         const res = await request(server).post('/auth/login').send(ALICE);
@@ -91,7 +109,7 @@ describe('POST /auth/login', () => {
     });
 
     test('answers an unknown email and a wrong password with the same 401', async () => {
-        const server = app();
+        const server = await app();
         await request(server).post('/auth/register').send(ALICE);
 
         const wrongPassword = await request(server).post('/auth/login').send({ ...ALICE, password: 'not the one' });
@@ -107,20 +125,20 @@ describe('POST /auth/login', () => {
 
 describe('GET /auth/me and POST /auth/logout', () => {
     test('/me answers 401 without a session cookie', async () => {
-        const res = await request(app()).get('/auth/me');
+        const res = await request(await app()).get('/auth/me');
 
         expect(res.status).toBe(401);
         expect(res.body).toEqual({ error: 'unauthenticated' });
     });
 
     test('/me answers 401 with a cookie that matches no session', async () => {
-        const res = await request(app()).get('/auth/me').set('Cookie', 'sid=forged');
+        const res = await request(await app()).get('/auth/me').set('Cookie', 'sid=forged');
 
         expect(res.status).toBe(401);
     });
 
     test('/me returns the signed-in user, and nothing works after logging out', async () => {
-        const agent = request.agent(app());
+        const agent = request.agent(await app());
         await agent.post('/auth/register').send(ALICE);
 
         const me = await agent.get('/auth/me');
@@ -135,20 +153,20 @@ describe('GET /auth/me and POST /auth/logout', () => {
     });
 
     test('logging out without a session still answers 204', async () => {
-        const res = await request(app()).post('/auth/logout');
+        const res = await request(await app()).post('/auth/logout');
 
         expect(res.status).toBe(204);
     });
 });
 
 test('no auth response may be stored by a cache', async () => {
-    const res = await request(app()).get('/auth/me');
+    const res = await request(await app()).get('/auth/me');
 
     expect(res.headers['cache-control']).toBe('no-store');
 });
 
 test('without MySQL, every auth route answers 503 instead of pretending to work', async () => {
-    const server = app({ withService: false });
+    const server = await app({ withService: false });
 
     for (const res of [
         await request(server).post('/auth/register').send(ALICE),
@@ -163,14 +181,14 @@ test('without MySQL, every auth route answers 503 instead of pretending to work'
 describe('attempt limits', () => {
     const WRONG = { ...ALICE, password: 'not the right one' };
     let now: number;
-    let server: ReturnType<typeof app>;
+    let server: http.Server;
 
     const login = (body: object, ip = '203.0.113.1') =>
         request(server).post('/auth/login').set('X-Forwarded-For', ip).send(body);
 
     beforeEach(async () => {
         now = Date.parse('2026-09-23T10:00:00Z');
-        server = app({ throttle: createAuthThrottle(() => now) });
+        server = await app({ throttle: createAuthThrottle(() => now) });
         // From another address, so the registration does not count against the tests.
         await request(server).post('/auth/register').set('X-Forwarded-For', '198.51.100.9').send(ALICE);
         fakeHasher.verify.mockClear();
