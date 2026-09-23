@@ -21,13 +21,13 @@ export default tseslint.config(
   {
     // Server, workers and infrastructure: plain Node.
     files: ['src/**/*.ts'],
-    ignores: ['src/static/**'],
+    ignores: ['src/client/**'],
     languageOptions: { globals: globals.node },
   },
 
   {
     // The React bundle runs in the browser, not in Node.
-    files: ['src/static/**/*.{ts,tsx}'],
+    files: ['src/client/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
   },
 

@@ -1,6 +1,7 @@
 import { Container, Stack, Box, Typography, Paper, Button } from "@mui/material";
 import TodayOutlinedIcon from '@mui/icons-material/TodayOutlined';
 import React from "react";
+import { Link } from 'react-router';
 
 interface DashboardTodo {
   id: string;
@@ -11,7 +12,7 @@ interface DashboardTodo {
 
 const dashboardTodos: DashboardTodo[] = [
   { id: '1', name: 'Review the project roadmap', dueToday: true, completed: false },
-  { id: '2', name: 'Prepare notes for the team sync', dueToday: true, completed: false },
+  { id: '2', name: 'Prepae notes for the team sync', dueToday: true, completed: false },
   { id: '3', name: 'Reply to pending messages', dueToday: true, completed: true },
   { id: '4', name: 'Update the weekly report', dueToday: false, completed: false },
   { id: '5', name: 'Plan next week’s priorities', dueToday: false, completed: false },
@@ -61,7 +62,7 @@ export default function HomePage() {
             <Typography color="text.secondary" mt={1}>
               todos still need to be completed
             </Typography>
-            <Button href="/todos" variant="outlined" sx={{ mt: 3 }}>
+            <Button component={Link} to="/todos" variant="outlined" sx={{ mt: 3 }}>
               View all todos
             </Button>
           </Paper>

@@ -39,7 +39,12 @@ app.put('/items/:id', updateItem);
 app.delete('/items/:id', deleteItem);
 
 // Serve the single-page application when a frontend route is opened directly.
-app.get('/todos', (_req: unknown, res: { sendFile: (file: string) => void }) => {
+app.get('/{*path}', (req, res, next) => {
+    // Preserve API and asset 404s instead of responding with the HTML shell.
+    if (/^\/(items|auth|health|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
+        next();
+        return;
+    }
     res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 

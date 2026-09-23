@@ -7,6 +7,26 @@ To use another writable location, run
 Both the database file and its parent directory must be writable.
 Existing databases at `/etc/todos/todo.db` are not moved automatically.
 
+The React frontend lives in `src/client`:
+
+```text
+src/client/
+  main.tsx                 # Browser entry point and router provider
+  app/                     # App providers, route definitions, layout, theme
+  pages/                   # Route-level screens
+  features/todos/           # Todo components, API calls, and styles
+  lib/                     # Shared browser utilities (HTTP client)
+  index.html               # Vite HTML entry
+```
+
+Add screens in `pages/` and register them in `app/routes.tsx`. Keep feature-specific
+components and data access in `features/<feature>/`; use React Router links for
+internal navigation. `/` is the dashboard, `/todos` is the todo list, and unmatched
+paths show a not-found screen. Vite handles direct links during development;
+Express serves the built app for frontend routes in production, preserving API
+responses and asset 404s. The build output remains `dist/`. Backend code stays outside
+`src/client`, and `src/types.ts` contains the shared item contract.
+
 Integration tests require MySQL 8.4 and a dedicated database. Start the local
 server with `docker compose up -d mysql`, then create the test database and
 grant the development user access (once per MySQL volume):

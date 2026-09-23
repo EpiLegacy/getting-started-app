@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-    root: 'src/static',
+    root: 'src/client',
     publicDir: false,
     plugins: [react({ jsxRuntime: 'classic' })],
     build: {
