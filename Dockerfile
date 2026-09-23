@@ -32,19 +32,34 @@ RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm c
 # ---------------------------------------------------------------------------
 FROM deps AS build
 COPY tsconfig.json tsconfig.build.json vite.config.mts ./
+COPY drizzle.config.ts ./
 COPY src ./src
 
 # A type error fails the image build: it can never reach a published artifact.
 RUN npm run typecheck
 
-RUN npx tsc -p tsconfig.build.json   # src/**/*.ts -> build/
-RUN npm run build                    # vite -> dist/
+RUN npx tsc -p tsconfig.build.json
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# migration
+# ---------------------------------------------------------------------------
+FROM deps AS migration
+
+COPY drizzle.config.ts ./
+COPY drizzle ./drizzle
+COPY src ./src
+
+CMD ["npm", "run", "db:migrate"]
 
 # ---------------------------------------------------------------------------
 # prod-deps - runtime dependencies only
 # ---------------------------------------------------------------------------
 FROM deps AS prod-deps
-RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm ci --omit=dev
+RUN --mount=type=cache,target=/root/.npm \
+    npm_config_build_from_source=true \
+    npm ci --omit=dev
 
 # ---------------------------------------------------------------------------
 # runtime - final image: no TS sources, no toolchain, no dev dependencies
@@ -52,8 +67,8 @@ RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm c
 FROM base AS runtime
 
 COPY --from=prod-deps /app/node_modules ./node_modules
-COPY --from=build     /app/build        ./build
-COPY --from=build     /app/dist         ./dist
+COPY --from=build /app/build ./build
+COPY --from=build /app/dist ./dist
 COPY package.json ./
 
 # TEMPORARY: the "node" user cannot write to /etc/todos, the default SQLite

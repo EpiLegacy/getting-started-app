@@ -6,100 +6,161 @@
 name: legacy-kanban
 
 services:
-  api:
-    build:
-      context: .
-      target: runtime
-    restart: unless-stopped
-    ports:
-      - "${API_PORT:-3000}:3000"
-    environment:
-      # Setting MYSQL_HOST is enough to switch persistence from SQLite to
-      # MySQL (see src/persistence/index.ts).
-      MYSQL_HOST: mysql
-      MYSQL_USER: ${MYSQL_USER:-todo}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
-      MYSQL_DB: ${MYSQL_DB:-todos}
-      # Consumed by the upcoming worker and by the outbox relay.
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
-      # legacy|drizzle (ADR 0001). Unset here defaults to legacy in the app
-      # itself; run `npm run db:migrate` against this database first if you
-      # switch to drizzle — it never creates tables on its own.
-      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
-    depends_on:
-      # Load-bearing, not cosmetic: the MySQL adapter gives up after 10s
-      # (waitPort), while the first MySQL 8 startup takes far longer. Without
-      # this condition, "up" fails every other time.
-      mysql:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
 
-  # Notification consumer. Same image as the API, only the command differs, so
-  # code and event schemas cannot drift apart between the two.
-  worker:
-    build:
-      context: .
-      target: runtime
-    restart: unless-stopped
-    command: ["node", "build/workers/notifications/index.js"]
-    # The image healthcheck probes HTTP, which a consumer does not serve.
-    # A real liveness probe on the AMQP connection replaces this later.
-    healthcheck:
-      disable: true
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_USER: ${MYSQL_USER:-todo}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
-      MYSQL_DB: ${MYSQL_DB:-todos}
-      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
-      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-legacy}
-    depends_on:
-      mysql:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-
+  # -------------------------------------------------------------------------
+  # MySQL
+  # -------------------------------------------------------------------------
   mysql:
     image: mysql:8.4
     restart: unless-stopped
+
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev_password}
       MYSQL_DATABASE: ${MYSQL_DB:-todos}
       MYSQL_USER: ${MYSQL_USER:-todo}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+
     ports:
-      # Debugging convenience (local SQL client). Safe to drop: the API reaches
-      # MySQL over the internal network, not through this published port.
       - "${MYSQL_PORT:-3306}:3306"
+
     volumes:
       - mysql-data:/var/lib/mysql
+
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      test:
+        [
+          "CMD",
+          "mysqladmin",
+          "ping",
+          "-h",
+          "127.0.0.1",
+          "--silent"
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 30s
 
+  # -------------------------------------------------------------------------
+  # RabbitMQ
+  # -------------------------------------------------------------------------
   rabbitmq:
-    # The "management" variant: its web UI is the visual evidence of the
-    # event-driven workflow during the Sprint Review.
     image: rabbitmq:4-management-alpine
     restart: unless-stopped
+
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+
     ports:
-      - "${RABBITMQ_PORT:-5672}:5672"      # AMQP
-      - "${RABBITMQ_UI_PORT:-15672}:15672" # management UI
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
+
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test:
+        [
+          "CMD",
+          "rabbitmq-diagnostics",
+          "-q",
+          "ping"
+        ]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # Drizzle migrations
+  # -------------------------------------------------------------------------
+  migration:
+    build:
+      context: .
+      target: migration
+
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-todo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+      MYSQL_DB: ${MYSQL_DB:-todos}
+
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # API
+  # -------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      target: runtime
+
+    restart: unless-stopped
+
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-todo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+      MYSQL_DB: ${MYSQL_DB:-todos}
+
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-drizzle}
+
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+
+      rabbitmq:
+        condition: service_healthy
+
+  # -------------------------------------------------------------------------
+  # Notification worker
+  # -------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      target: runtime
+
+    restart: unless-stopped
+
+    command:
+      [
+        "node",
+        "build/workers/notifications/index.js"
+      ]
+
+    # The runtime image healthcheck probes HTTP,
+    # which the worker does not expose.
+    healthcheck:
+      disable: true
+
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_USER: ${MYSQL_USER:-todo}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
+      MYSQL_DB: ${MYSQL_DB:-todos}
+
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-drizzle}
+
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+
+      rabbitmq:
+        condition: service_healthy
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
 
 volumes:
   mysql-data:

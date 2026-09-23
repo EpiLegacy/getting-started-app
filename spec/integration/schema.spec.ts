@@ -4,14 +4,15 @@ import { TABLES, connect, dropTables, showCreateTable } from './support/database
 
 /*
  * The tables the application creates at start-up must be the ones production
- * has: every other integration test relies on it, and so will the Drizzle
- * schema. Reference: scripts/db/inspect.sql run against production on
- * 2026-09-17 (MySQL 8.4.11), AUTO_INCREMENT counters left out.
+ * has, including the deadline and priorisation columns added by migration
+ * 0001. Baseline: scripts/db/inspect.sql on 2026-09-17 (MySQL 8.4.11),
+ * AUTO_INCREMENT counters left out.
  */
 const PRODUCTION = {
     todo_items:
         'CREATE TABLE `todo_items` ( `id` varchar(36) DEFAULT NULL, `name` varchar(255) DEFAULT NULL, ' +
-        '`completed` tinyint(1) DEFAULT NULL ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci',
+        '`completed` tinyint(1) DEFAULT NULL, `deadline` varchar(255) DEFAULT NULL, ' +
+        '`priorisation` varchar(255) DEFAULT NULL ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci',
     outbox_events:
         'CREATE TABLE `outbox_events` ( `id` bigint unsigned NOT NULL AUTO_INCREMENT, ' +
         '`event_id` char(36) NOT NULL, `type` varchar(120) NOT NULL, `version` int unsigned NOT NULL, ' +
@@ -50,7 +51,7 @@ beforeAll(async () => {
  */
 beforeEach(async () => {
     await connection.query(
-        'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
+        'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean, deadline varchar(255), priorisation varchar(255)) DEFAULT CHARSET utf8mb4',
     );
 });
 

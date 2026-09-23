@@ -2,12 +2,14 @@ const waitPort = require('wait-port');
 const fs = require('fs');
 const mysql = require('mysql2');
 import type { Pool, RowDataPacket } from 'mysql2';
-import type { Item, StoredItem } from '../types';
+import type { Item, Priority, StoredItem } from '../types';
 
 interface DbRow extends RowDataPacket {
     id: string;
-    name: unknown;
+    name: string;
     completed: number;
+    deadline: string;
+    priorisation: string;
 }
 
 const {
@@ -49,7 +51,13 @@ async function init(): Promise<void> {
 
     return new Promise((acc, rej) => {
         pool.query(
-            'CREATE TABLE IF NOT EXISTS todo_items (id varchar(36), name varchar(255), completed boolean) DEFAULT CHARSET utf8mb4',
+            `CREATE TABLE IF NOT EXISTS todo_items (
+                id varchar(36),
+                name varchar(255),
+                completed boolean,
+                deadline varchar(255),
+                priorisation varchar(255)
+            ) DEFAULT CHARSET utf8mb4`,
             err => {
                 if (err) return rej(err);
 
@@ -71,54 +79,92 @@ async function teardown(): Promise<void> {
 
 async function getItems(): Promise<StoredItem[]> {
     return new Promise((acc, rej) => {
-        pool.query<DbRow[]>('SELECT * FROM todo_items', (err, rows) => {
-            if (err) return rej(err);
-            acc(
-                rows.map(item =>
-                    Object.assign({}, item, {
+        pool.query<DbRow[]>(
+            'SELECT * FROM todo_items',
+            (err, rows) => {
+                if (err) return rej(err);
+
+                acc(
+                    rows.map(item => ({
+                        id: item.id,
+                        name: item.name,
                         completed: item.completed === 1,
-                    }),
-                ),
-            );
-        });
+                        deadline: item.deadline,
+                        priorisation: item.priorisation as Priority,
+                    })),
+                );
+            },
+        );
     });
 }
 
 async function getItem(id: string): Promise<StoredItem | undefined> {
     return new Promise((acc, rej) => {
-        pool.query<DbRow[]>('SELECT * FROM todo_items WHERE id=?', [id], (err, rows) => {
-            if (err) return rej(err);
-            acc(
-                rows.map(item =>
-                    Object.assign({}, item, {
-                        completed: item.completed === 1,
-                    }),
-                )[0],
-            );
-        });
+        pool.query<DbRow[]>(
+            'SELECT * FROM todo_items WHERE id=?',
+            [id],
+            (err, rows) => {
+                if (err) return rej(err);
+
+                const item = rows[0];
+
+                if (!item) {
+                    return acc(undefined);
+                }
+
+                acc({
+                    id: item.id,
+                    name: item.name,
+                    completed: item.completed === 1,
+                    deadline: item.deadline,
+                    priorisation: item.priorisation as Priority,
+                });
+            },
+        );
     });
 }
 
 async function storeItem(item: Item): Promise<void> {
     return new Promise((acc, rej) => {
         pool.query(
-            'INSERT INTO todo_items (id, name, completed) VALUES (?, ?, ?)',
-            [item.id, item.name, item.completed ? 1 : 0],
+            `INSERT INTO todo_items
+                (id, name, completed, deadline, priorisation)
+             VALUES (?, ?, ?, ?, ?)`,
+            [
+                item.id,
+                item.name,
+                item.completed ? 1 : 0,
+                item.deadline,
+                item.priorisation,
+            ],
             err => {
                 if (err) return rej(err);
+
                 acc();
             },
         );
     });
 }
 
-async function updateItem(id: string, item: Omit<Item, 'id'>): Promise<void> {
+async function updateItem(
+    id: string,
+    item: Omit<Item, 'id'>,
+): Promise<void> {
     return new Promise((acc, rej) => {
         pool.query(
-            'UPDATE todo_items SET name=?, completed=? WHERE id=?',
-            [item.name, item.completed ? 1 : 0, id],
+            `UPDATE todo_items
+             SET name=?, completed=?, deadline=?, priorisation=?
+             WHERE id=?`,
+            [
+                item.name,
+                item.completed ? 1 : 0,
+                item.deadline,
+                item.priorisation,
+                id,
+            ],
             err => {
                 if (err) return rej(err);
+
                 acc();
             },
         );
@@ -127,10 +173,15 @@ async function updateItem(id: string, item: Omit<Item, 'id'>): Promise<void> {
 
 async function removeItem(id: string): Promise<void> {
     return new Promise((acc, rej) => {
-        pool.query('DELETE FROM todo_items WHERE id = ?', [id], err => {
-            if (err) return rej(err);
-            acc();
-        });
+        pool.query(
+            'DELETE FROM todo_items WHERE id = ?',
+            [id],
+            err => {
+                if (err) return rej(err);
+
+                acc();
+            },
+        );
     });
 }
 
