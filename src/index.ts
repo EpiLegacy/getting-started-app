@@ -1,11 +1,11 @@
-const express = require('express');
-const path = require('path');
+import express from 'express';
+import path from 'path';
 const app = express();
-const db = require('./persistence');
-const getItems = require('./routes/getItems');
-const addItem = require('./routes/addItem');
-const updateItem = require('./routes/updateItem');
-const deleteItem = require('./routes/deleteItem');
+import db from './persistence';
+import getItems from './routes/getItems';
+import addItem from './routes/addItem';
+import updateItem from './routes/updateItem';
+import deleteItem from './routes/deleteItem';
 import { closePool, ensureEventSchema, isMysqlConfigured } from './infrastructure/db/mysql';
 import { init as initDrizzlePool, isDrizzleConfigured } from './infrastructure/db/drizzle';
 import { RabbitmqPublisher } from './infrastructure/messaging/rabbitmqPublisher';

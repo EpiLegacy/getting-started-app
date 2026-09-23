@@ -1,4 +1,4 @@
-const db = require('../persistence');
+import db from '../persistence';
 import { randomUUID } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { isMysqlConfigured } from '../infrastructure/db/mysql';
@@ -6,16 +6,18 @@ import { updateTask } from '../modules/tasks/application/updateTask';
 import { updateTask as updateTaskDrizzle } from '../modules/tasks/application/updateTask.drizzle';
 import { resolvePersistenceDriver } from '../shared/persistenceDriver';
 
-// require('../persistence') above already validated PERSISTENCE_DRIVER.
+// Importing persistence above already validated PERSISTENCE_DRIVER.
 const runUpdateTask = resolvePersistenceDriver() === 'drizzle' ? updateTaskDrizzle : updateTask;
 
-module.exports = async (req: Request, res: Response) => {
+export = async (req: Request<{ id: string }>, res: Response) => {
     // The event-driven path needs transactions, which only the MySQL adapter
     // provides. SQLite development keeps the legacy behaviour, without events.
     if (!isMysqlConfigured()) {
         await db.updateItem(req.params.id, {
             name: req.body.name,
             completed: req.body.completed,
+            deadline: req.body.deadline,
+            priorisation: req.body.priorisation,
         });
         const item = await db.getItem(req.params.id);
         res.send(item);

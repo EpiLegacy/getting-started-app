@@ -1,5 +1,7 @@
-const sqlite3 = require('sqlite3').verbose();
-const fs = require('fs');
+import sqlite from 'sqlite3';
+import path from 'path';
+const sqlite3 = sqlite.verbose();
+import fs from 'fs';
 import type { RunResult } from 'sqlite3';
 import type { Item, StoredItem } from '../types';
 
@@ -8,12 +10,12 @@ interface DbRow {
     name: unknown;
     completed: number;
 }
-const location = process.env.SQLITE_DB_LOCATION || require('path').resolve('data', 'todo.db');
+const location = process.env.SQLITE_DB_LOCATION || path.resolve('data', 'todo.db');
 
 let db: import('sqlite3').Database;
 
 function init(): Promise<void> {
-    const dirName = require('path').dirname(location);
+    const dirName = path.dirname(location);
     if (!fs.existsSync(dirName)) {
         fs.mkdirSync(dirName, { recursive: true });
     }
@@ -110,7 +112,7 @@ async function removeItem(id: string): Promise<void> {
     });
 }
 
-module.exports = {
+export = {
     init,
     teardown,
     getItems,

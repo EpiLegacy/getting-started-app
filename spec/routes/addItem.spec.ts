@@ -1,7 +1,8 @@
-const db = require('../../src/persistence');
+import type { Request, Response } from 'express';
+const db = jest.requireMock('../../src/persistence');
 export {};
-const addItem = require('../../src/routes/addItem');
-const {v4 : uuid} = require('uuid');
+import addItem from '../../src/routes/addItem';
+const { v4: uuid } = jest.requireMock('uuid');
 
 jest.mock('uuid', () => ({ v4: jest.fn() }));
 
@@ -19,7 +20,7 @@ test('it stores item correctly', async () => {
 
     uuid.mockReturnValue(id);
 
-    await addItem(req, res);
+    await addItem(req as unknown as Request, res as unknown as Response);
 
     const expectedItem = { id, name, completed: false };
 

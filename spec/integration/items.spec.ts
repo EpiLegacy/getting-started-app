@@ -23,7 +23,7 @@ import {
  */
 
 // src/persistence/index.ts picks the MySQL adapter, since MYSQL_HOST is set.
-const db = require('../../src/persistence');
+import db from '../../src/persistence';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const JSON_TYPE = 'application/json; charset=utf-8';

@@ -63,29 +63,4 @@ export default tseslint.config(
     },
   },
 
-  {
-    /**
-     * `require()` left over from the JavaScript-to-TypeScript migration (#17).
-     * These are the files the ongoing architecture work keeps replacing, so
-     * rewriting their imports now would only cause conflicts. They warn
-     * instead of failing, and the count shows in every CI run.
-     */
-    files: [
-      'src/index.ts',
-      'src/routes/**/*.ts',
-      'src/persistence/**/*.ts',
-      'spec/**/*.ts',
-    ],
-    rules: { '@typescript-eslint/no-require-imports': 'warn' },
-  },
-
-  {
-    /**
-     * The Bootstrap-era frontend. The routing work (#69) moves it to
-     * src/frontend, where the full rule set applies; editing it here would
-     * only conflict with that pull request. Delete this block once it lands.
-     */
-    files: ['src/static/**/*.{ts,tsx}'],
-    rules: { '@typescript-eslint/no-unused-vars': 'warn' },
-  },
 );

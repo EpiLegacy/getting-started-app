@@ -1,6 +1,6 @@
-const waitPort = require('wait-port');
-const fs = require('fs');
-const mysql = require('mysql2');
+import waitPort from 'wait-port';
+import fs from 'fs';
+import mysql from 'mysql2';
 import type { Pool, RowDataPacket } from 'mysql2';
 import type { Item, Priority, StoredItem } from '../types';
 
@@ -27,10 +27,10 @@ const {
 let pool: Pool;
 
 async function init(): Promise<void> {
-    const host = HOST_FILE ? fs.readFileSync(HOST_FILE) : HOST;
-    const user = USER_FILE ? fs.readFileSync(USER_FILE) : USER;
-    const password = PASSWORD_FILE ? fs.readFileSync(PASSWORD_FILE) : PASSWORD;
-    const database = DB_FILE ? fs.readFileSync(DB_FILE) : DB;
+    const host = HOST_FILE ? fs.readFileSync(HOST_FILE, 'utf8') : HOST;
+    const user = USER_FILE ? fs.readFileSync(USER_FILE, 'utf8') : USER;
+    const password = PASSWORD_FILE ? fs.readFileSync(PASSWORD_FILE, 'utf8') : PASSWORD;
+    const database = DB_FILE ? fs.readFileSync(DB_FILE, 'utf8') : DB;
 
     await waitPort({ 
         host, 
@@ -185,7 +185,7 @@ async function removeItem(id: string): Promise<void> {
     });
 }
 
-module.exports = {
+export = {
     init,
     teardown,
     getItems,

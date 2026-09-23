@@ -1,3 +1,7 @@
+import deleteItem from '../../../src/routes/deleteItem';
+import updateItem from '../../../src/routes/updateItem';
+import addItem from '../../../src/routes/addItem';
+import getItems from '../../../src/routes/getItems';
 import path from 'path';
 import express, { type Express } from 'express';
 import { isDrizzleConfigured } from '../../../src/infrastructure/db/drizzle';
@@ -27,10 +31,10 @@ export function createApp(): Express {
         }),
     );
 
-    app.get('/items', require('../../../src/routes/getItems'));
-    app.post('/items', require('../../../src/routes/addItem'));
-    app.put('/items/:id', require('../../../src/routes/updateItem'));
-    app.delete('/items/:id', require('../../../src/routes/deleteItem'));
+    app.get('/items', getItems);
+    app.post('/items', addItem);
+    app.put('/items/:id', updateItem);
+    app.delete('/items/:id', deleteItem);
 
     return app;
 }

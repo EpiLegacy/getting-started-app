@@ -21,7 +21,6 @@ const dashboardTodos: DashboardTodo[] = [
 ];
 
 export default function HomePage() {
-  const dueToday = dashboardTodos.filter(todo => todo.dueToday);
   const unresolvedCount = 0
 
   return (

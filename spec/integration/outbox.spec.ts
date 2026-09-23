@@ -48,7 +48,7 @@ import {
  */
 
 // Loaded like src/index.ts does, to create todo_items the way the app does.
-const db = require('../../src/persistence');
+import db from '../../src/persistence';
 
 const realEnqueue = outboxRepositoryModule.enqueue;
 let connection: Connection;
@@ -462,7 +462,7 @@ describe('outbox relay', () => {
             expect(await stateAfter(completion, 500)).toBe('pending');
 
             // ...and the waiting completion keeps the whole todo_items table locked.
-            const creation = db.storeItem({ id: 'task-2', name: 'new', completed: false });
+            const creation = db.storeItem({ id: 'task-2', name: 'new', completed: false, deadline: '2026-10-01', priorisation: 'low' });
             expect(await stateAfter(creation, 500)).toBe('pending');
 
             brokerAnswers.open();
