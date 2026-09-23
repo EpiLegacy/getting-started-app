@@ -100,7 +100,7 @@ describe('GET /items', () => {
         expect(res.text).toBe('[]');
     });
 
-    test('returns every item as {id, name, completed}, in insertion order', async () => {
+    test('returns every item with deadline and priorisation, in insertion order', async () => {
         // No ORDER BY: InnoDB returns a table without primary key in insertion
         // order, and the list users see relies on it.
         await insertTodoRows(connection, [
@@ -117,9 +117,9 @@ describe('GET /items', () => {
         // Compared as text: key order is part of the body, and so of its ETag.
         expect(res.text).toBe(
             JSON.stringify([
-                { id: 'cccccccc-0000-4000-8000-000000000003', name: 'inserted first', completed: false },
-                { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'inserted second', completed: true },
-                { id: 'bbbbbbbb-0000-4000-8000-000000000002', name: 'inserted third', completed: false },
+                { id: 'cccccccc-0000-4000-8000-000000000003', name: 'inserted first', completed: false, deadline: null, priorisation: null },
+                { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'inserted second', completed: true, deadline: null, priorisation: null },
+                { id: 'bbbbbbbb-0000-4000-8000-000000000002', name: 'inserted third', completed: false, deadline: null, priorisation: null },
             ]),
         );
     });
@@ -137,10 +137,10 @@ describe('GET /items', () => {
         expect(res.status).toBe(200);
         expect(res.text).toBe(
             JSON.stringify([
-                { id: 'completed-null', name: 'completed is NULL', completed: false },
-                { id: 'completed-two', name: 'completed is 2', completed: false },
-                { id: 'name-null', name: null, completed: true },
-                { id: null, name: 'id is NULL', completed: false },
+                { id: 'completed-null', name: 'completed is NULL', completed: false, deadline: null, priorisation: null },
+                { id: 'completed-two', name: 'completed is 2', completed: false, deadline: null, priorisation: null },
+                { id: 'name-null', name: null, completed: true, deadline: null, priorisation: null },
+                { id: null, name: 'id is NULL', completed: false, deadline: null, priorisation: null },
             ]),
         );
     });
@@ -154,8 +154,8 @@ describe('GET /items', () => {
         const res = await request(app).get('/items');
 
         expect(res.body).toEqual([
-            { id: ID, name: 'first copy', completed: false },
-            { id: ID, name: 'second copy', completed: true },
+            { id: ID, name: 'first copy', completed: false, deadline: null, priorisation: null },
+            { id: ID, name: 'second copy', completed: true, deadline: null, priorisation: null },
         ]);
     });
 
@@ -172,6 +172,19 @@ describe('GET /items', () => {
 });
 
 describe('POST /items', () => {
+    test('stores deadline and priorisation and returns them when listing items', async () => {
+        const input = { name: 'Planned task', deadline: '2026-10-01', priorisation: 'high' };
+        const res = await request(app).post('/items').send(input);
+
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ id: expect.stringMatching(UUID_V4), ...input, completed: false });
+        const list = await request(app).get('/items');
+        expect(list.status).toBe(200);
+        expect(list.body).toEqual([res.body]);
+        const [rows] = await connection.query('SELECT deadline, priorisation FROM todo_items WHERE id = ?', [res.body.id]);
+        expect(rows).toEqual([{ deadline: input.deadline, priorisation: input.priorisation }]);
+    });
+
     test('stores a new, not completed item and answers 200 with it', async () => {
         const res = await request(app).post('/items').send({ name: 'Buy milk' });
 
@@ -189,7 +202,10 @@ describe('POST /items', () => {
 
         expect(first.body.id).not.toBe(second.body.id);
         const list = await request(app).get('/items');
-        expect(list.body).toEqual([first.body, second.body]);
+        expect(list.body).toEqual([
+            { ...first.body, deadline: null, priorisation: null },
+            { ...second.body, deadline: null, priorisation: null },
+        ]);
     });
 
     test('keeps accents, emoji and other scripts byte for byte', async () => {
@@ -203,7 +219,7 @@ describe('POST /items', () => {
             Buffer.from(name, 'utf8').toString('hex').toUpperCase(),
         ]);
         const list = await request(app).get('/items');
-        expect(list.body).toEqual([{ id: res.body.id, name, completed: false }]);
+        expect(list.body).toEqual([{ id: res.body.id, name, completed: false, deadline: null, priorisation: null }]);
     });
 
     test('accepts a name of 255 characters, each emoji counting as one', async () => {
@@ -325,7 +341,7 @@ describe('PUT /items/:id', () => {
 
         expect(res.body).toEqual({ id: ID, name, completed: false });
         expect(await selectNameBytes(connection, ID)).toEqual([Buffer.from(name, 'utf8').toString('hex').toUpperCase()]);
-        expect((await request(app).get('/items')).body).toEqual([{ id: ID, name, completed: false }]);
+        expect((await request(app).get('/items')).body).toEqual([{ id: ID, name, completed: false, deadline: null, priorisation: null }]);
     });
 
     test('completing an item answers completed: true and records one task.completed event', async () => {
@@ -504,7 +520,7 @@ describe('DELETE /items/:id', () => {
         expect(res.headers['content-type']).toBe('text/plain; charset=utf-8');
         expect(res.text).toBe('OK');
         expect(await selectTodoRows(connection)).toEqual([{ id: OTHER_ID, name: 'kept', completed: 1 }]);
-        expect((await request(app).get('/items')).body).toEqual([{ id: OTHER_ID, name: 'kept', completed: true }]);
+        expect((await request(app).get('/items')).body).toEqual([{ id: OTHER_ID, name: 'kept', completed: true, deadline: null, priorisation: null }]);
         expect(await countRows(connection, 'outbox_events')).toBe(0);
     });
 

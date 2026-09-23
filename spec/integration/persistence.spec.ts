@@ -41,9 +41,9 @@ describe('getItems', () => {
 
         expect(JSON.stringify(items)).toBe(
             JSON.stringify([
-                { id: 'b', name: 'second id', completed: true },
-                { id: 'a', name: null, completed: false },
-                { id: 'b', name: 'duplicate id', completed: false },
+                { id: 'b', name: 'second id', completed: true, deadline: null, priorisation: null },
+                { id: 'a', name: null, completed: false, deadline: null, priorisation: null },
+                { id: 'b', name: 'duplicate id', completed: false, deadline: null, priorisation: null },
             ]),
         );
     });
@@ -58,7 +58,7 @@ describe('getItem', () => {
 
         const item = await db.getItem(ID);
 
-        expect(JSON.stringify(item)).toBe(JSON.stringify({ id: ID, name: 'Café 🎉', completed: true }));
+        expect(JSON.stringify(item)).toBe(JSON.stringify({ id: ID, name: 'Café 🎉', completed: true, deadline: null, priorisation: null }));
     });
 
     test('resolves undefined for an unknown id', async () => {
@@ -74,16 +74,28 @@ describe('getItem', () => {
             [ID, 'second', 1],
         ]);
 
-        await expect(db.getItem(ID)).resolves.toEqual({ id: ID, name: 'first', completed: false });
+        await expect(db.getItem(ID)).resolves.toEqual({ id: ID, name: 'first', completed: false, deadline: null, priorisation: null });
     });
 });
 
 describe('storeItem', () => {
+    test('stores and updates deadline and priorisation', async () => {
+        const item = { id: ID, name: 'Planned task', completed: false, deadline: '2026-10-01', priorisation: 'high' as const };
+        await db.storeItem(item);
+        expect(await db.getItem(ID)).toEqual(item);
+
+        const updated = { ...item, deadline: '2026-10-02', priorisation: 'low' as const };
+        await db.updateItem(ID, updated);
+        expect(await db.getItems()).toEqual([updated]);
+        const [rows] = await connection.query('SELECT deadline, priorisation FROM todo_items WHERE id = ?', [ID]);
+        expect(rows).toEqual([{ deadline: '2026-10-02', priorisation: 'low' }]);
+    });
+
     test('inserts the item, completed stored as 1 or 0 by truthiness', async () => {
-        await db.storeItem({ id: 'done', name: 'done', completed: true });
-        await db.storeItem({ id: 'open', name: 'open', completed: false });
-        await db.storeItem({ id: 'truthy', name: 'truthy', completed: 'no' });
-        await db.storeItem({ id: 'missing', name: undefined, completed: undefined });
+        await db.storeItem({ id: 'done', name: 'done', completed: true } as any);
+        await db.storeItem({ id: 'open', name: 'open', completed: false } as any);
+        await db.storeItem({ id: 'truthy', name: 'truthy', completed: 'no' } as any);
+        await db.storeItem({ id: 'missing', name: undefined, completed: undefined } as any);
 
         expect(await selectTodoRows(connection)).toEqual([
             { id: 'done', name: 'done', completed: 1 },
@@ -94,7 +106,7 @@ describe('storeItem', () => {
     });
 
     test('rejects a name longer than 255 characters and inserts nothing', async () => {
-        await expect(db.storeItem({ id: ID, name: 'a'.repeat(256), completed: false })).rejects.toHaveProperty(
+        await expect(db.storeItem({ id: ID, name: 'a'.repeat(256), completed: false } as any)).rejects.toHaveProperty(
             'code',
             'ER_DATA_TOO_LONG',
         );
@@ -102,8 +114,8 @@ describe('storeItem', () => {
     });
 
     test('inserts a second row for an id that already exists', async () => {
-        await db.storeItem({ id: ID, name: 'first', completed: false });
-        await db.storeItem({ id: ID, name: 'second', completed: true });
+        await db.storeItem({ id: ID, name: 'first', completed: false } as any);
+        await db.storeItem({ id: ID, name: 'second', completed: true } as any);
 
         expect(await selectTodoRows(connection)).toEqual([
             { id: ID, name: 'first', completed: 0 },
@@ -120,7 +132,7 @@ describe('updateItem', () => {
             [ID, 'copy B', 0],
         ]);
 
-        await expect(db.updateItem(ID, { name: 'renamed 🎉', completed: 'false' })).resolves.toBeUndefined();
+        await expect(db.updateItem(ID, { name: 'renamed 🎉', completed: 'false' } as any)).resolves.toBeUndefined();
 
         expect(await selectTodoRows(connection)).toEqual([
             { id: ID, name: 'renamed 🎉', completed: 1 },
@@ -128,15 +140,15 @@ describe('updateItem', () => {
             { id: ID, name: 'renamed 🎉', completed: 1 },
         ]);
 
-        await db.updateItem(ID, { name: undefined, completed: undefined });
+        await db.updateItem(ID, { name: undefined, completed: undefined } as any);
         expect((await selectTodoRows(connection))[0]).toEqual({ id: ID, name: null, completed: 0 });
     });
 
     test('resolves without writing anything for an unknown id', async () => {
         await insertTodoRows(connection, [[ID, 'task', 0]]);
 
-        await expect(db.updateItem('unknown', { name: 'x', completed: true })).resolves.toBeUndefined();
-        await expect(db.updateItem("x' OR '1'='1", { name: 'x', completed: true })).resolves.toBeUndefined();
+        await expect(db.updateItem('unknown', { name: 'x', completed: true } as any)).resolves.toBeUndefined();
+        await expect(db.updateItem("x' OR '1'='1", { name: 'x', completed: true } as any)).resolves.toBeUndefined();
 
         expect(await selectTodoRows(connection)).toEqual([{ id: ID, name: 'task', completed: 0 }]);
     });

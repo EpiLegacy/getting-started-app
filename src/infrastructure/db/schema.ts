@@ -1,4 +1,5 @@
 import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryKey, unique, varchar } from 'drizzle-orm/mysql-core';
+import { Priority } from '../../types';
 
 /**
  * Declares the database exactly as production has it today (captured by
@@ -17,6 +18,8 @@ export const todoItems = mysqlTable('todo_items', {
     id: varchar('id', { length: 36 }),
     name: varchar('name', { length: 255 }),
     completed: boolean('completed'),
+    deadline: varchar('deadline', { length: 255 }),
+    priorisation: varchar('priorisation', { length: 255 }).$type<Priority>(),
 });
 
 export const outboxEvents = mysqlTable(
