@@ -180,7 +180,7 @@ test('without MySQL, every auth route answers 503 instead of pretending to work'
 
 describe('profile and self-service account deletion', () => {
     test('profile is private and contains no credentials', async () => {
-        const server = app();
+        const server = await app();
         expect((await request(server).get('/auth/profile')).status).toBe(401);
         const agent = request.agent(server);
         const registered = await agent.post('/auth/register').send(ALICE);
@@ -193,7 +193,7 @@ describe('profile and self-service account deletion', () => {
     });
 
     test('deletion needs a session and correct password and rejects supplied account ids', async () => {
-        const server = app();
+        const server = await app();
         expect((await request(server).delete('/auth/me').send({ password: ALICE.password })).status).toBe(401);
         const agent = request.agent(server);
         await agent.post('/auth/register').send(ALICE);
@@ -207,7 +207,7 @@ describe('profile and self-service account deletion', () => {
     });
 
     test('deletes only the signed-in account, clears its cookie, and revokes all sessions', async () => {
-        const server = app();
+        const server = await app();
         const alice = request.agent(server);
         const secondSession = request.agent(server);
         const bob = request.agent(server);
@@ -235,6 +235,8 @@ test('profile returns an expired-session response if the account disappears afte
     expect(profile.status).toBe(401);
     expect(profile.body).toEqual({ error: 'unauthenticated' });
     expect(profile.text).not.toContain(ALICE.email);
+});
+
 describe('attempt limits', () => {
     const WRONG = { ...ALICE, password: 'not the right one' };
     let now: number;
