@@ -163,6 +163,54 @@ describe('authenticated task API', () => {
         expect((await bob.get('/items/unassigned')).body).toEqual([]);
     });
 
+    test('profile returns only the authenticated account details', async () => {
+        const response = await alice.get('/auth/profile?userId=' + bobId);
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ user: {
+            id: aliceId, email: 'alice@example.com', createdAt: expect.any(String),
+        } });
+        const [stored] = await connection.query<RowDataPacket[]>('SELECT created_at FROM users WHERE id = ?', [aliceId]);
+        expect(response.body.user.createdAt).toBe(stored[0].created_at.toISOString());
+        expect(response.headers['cache-control']).toBe('no-store');
+    });
+
+    test('account deletion removes created and claimed tasks and all sessions, preserving everyone else', async () => {
+        const password = 'correct horse battery staple';
+        await alice.post('/items').send(fields);
+        const bobTask = await bob.post('/items').send(fields);
+        await connection.query("INSERT INTO todo_items (name) VALUES ('Claimed'), ('Still unassigned')");
+        const unassigned = (await alice.get('/items/unassigned')).body;
+        await alice.post(`/items/${unassigned[0].id}/claim`);
+        const otherDevice = request.agent(app);
+        await otherDevice.post('/auth/login').send({ email: 'alice@example.com', password });
+        const denied = await alice.delete('/auth/me').send({ password: 'wrong' });
+        expect(denied.status).toBe(403);
+        expect((await alice.get('/items')).body).toHaveLength(2);
+        expect((await alice.delete('/auth/me').send({ password })).status).toBe(204);
+        expect((await alice.get('/auth/me')).status).toBe(401);
+        expect((await otherDevice.get('/items')).status).toBe(401);
+        expect((await request(app).post('/auth/login').send({ email: 'alice@example.com', password })).status).toBe(401);
+        expect((await bob.get('/items')).body).toEqual([bobTask.body]);
+        expect((await bob.get('/items/unassigned')).body).toEqual([unassigned[1]]);
+        expect((await rows('SELECT id FROM users')).map(row => row.id)).toEqual([bobId]);
+        expect((await rows('SELECT user_id FROM sessions')).every(row => row.user_id === bobId)).toBe(true);
+        expect(await rows('SELECT * FROM todo_items')).toHaveLength(2);
+    });
+
+    test('failed account deletion rolls back task deletion and keeps all sessions valid', async () => {
+        await alice.post('/items').send(fields);
+        await connection.query("CREATE TRIGGER reject_account_delete BEFORE DELETE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Injected failure'");
+        const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            expect((await alice.delete('/auth/me').send({ password: 'correct horse battery staple' })).status).toBe(500);
+            expect((await alice.get('/auth/profile')).status).toBe(200);
+            expect((await alice.get('/items')).body).toHaveLength(1);
+        } finally {
+            await connection.query('DROP TRIGGER reject_account_delete');
+            logged.mockRestore();
+        }
+    });
+
     test('invalid input and forged or expired sessions cannot mutate tasks', async () => {
         expect((await alice.post('/items').send({ ...fields, name: '' })).status).toBe(400);
         expect((await alice.post('/items').send({ ...fields, deadline: 'not-a-date' })).status).toBe(400);

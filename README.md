@@ -31,7 +31,11 @@ Add screens in `pages/` and register them in `app/routes.tsx`. Keep feature-spec
 components and data access in `features/<feature>/`; use React Router links for
 internal navigation. `/` is the dashboard, `/todos` is the todo list, and unmatched
 paths show a not-found screen. `/login` and `/register` are public; the dashboard
-and task list require a session. The task list separates your tasks from existing
+and task list require a session. `/profile` shows your email, account ID, and
+creation date without editing controls. From this page, confirm your current
+password to permanently delete your account and all owned tasks (including
+claimed tasks). All sessions are revoked, and shared unassigned tasks and other
+users’ tasks remain unchanged. The task list separates your tasks from existing
 unassigned tasks. Any signed-in account can claim an unassigned task; after a
 successful claim it is private to that account. Simultaneous claims have one
 winner, and the other user sees a conflict message and refreshed list.

@@ -6,9 +6,11 @@ import { authApi } from './api';
 interface AuthContextValue {
     user: User | null;
     loading: boolean;
+    accountDeleted: boolean;
     error: string;
     signIn(mode: 'login' | 'register', email: string, password: string): Promise<void>;
     logout(): Promise<void>;
+    deleteAccount(password: string): Promise<void>;
     retry(): void;
 }
 
@@ -18,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [accountDeleted, setAccountDeleted] = useState(false);
     const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
@@ -41,10 +44,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     const value: AuthContextValue = {
-        user, loading, error,
+        user, loading, error, accountDeleted,
         async signIn(mode, email, password) {
             const result = await authApi.signIn(mode, email, password);
+            setAccountDeleted(false);
             setUser(result.user);
+            setError('');
+        },
+        async deleteAccount(password) {
+            await authApi.deleteAccount(password);
+            setAccountDeleted(true);
+            setUser(null);
             setError('');
         },
         async logout() {

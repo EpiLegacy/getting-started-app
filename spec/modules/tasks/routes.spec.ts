@@ -6,7 +6,7 @@ import type { TaskRepository } from '../../../src/modules/tasks/types';
 
 const service: AuthService = {
     authenticate: async token => token === 'valid' ? { id: 'alice', email: 'alice@example.com' } : undefined,
-    register: jest.fn(), login: jest.fn(), logout: jest.fn(),
+    profile: jest.fn(), deleteAccount: jest.fn(), register: jest.fn(), login: jest.fn(), logout: jest.fn(),
 };
 const repository: jest.Mocked<TaskRepository> = {
     list: jest.fn(), listUnassigned: jest.fn(), create: jest.fn(),

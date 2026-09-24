@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type RequestHandler, type Response } from 'express';
 import type { ZodType } from 'zod';
 import { SESSION_COOKIE, readCookie, sessionCookieOptions } from './cookies';
-import { loginSchema, registerSchema } from './credentials';
+import { deleteAccountSchema, loginSchema, registerSchema } from './credentials';
 import { SESSION_TTL_MS, type AuthService, type SignedIn } from './service';
 import type { User } from './types';
 
@@ -44,7 +44,7 @@ export function requireAuth(service: AuthService): RequestHandler {
 }
 
 /**
- * /auth/register, /auth/login, /auth/logout and /auth/me.
+ * Registration, login/logout, session lookup, profile and self-service deletion.
  *
  * Without a service (MYSQL_HOST unset: the accounts live in MySQL only, see
  * ADR 0001) every route answers 503 rather than pretending to work.
@@ -106,6 +106,31 @@ export function createAuthRouter(service: AuthService | undefined, options: Auth
 
     router.get('/me', requireAuth(service), (_req, res) => {
         res.json({ user: currentUser(res) });
+    });
+
+    router.get('/profile', requireAuth(service), async (_req, res) => {
+        const user = await service.profile(currentUser(res).id);
+        if (!user) {
+            res.status(401).json({ error: 'unauthenticated' });
+            return;
+        }
+        res.json({ user });
+    });
+
+    router.delete('/me', requireAuth(service), async (req, res) => {
+        const parsed = deleteAccountSchema.safeParse(req.body);
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_deletion_request' });
+            return;
+        }
+        // Identity always comes from the session, never a supplied account id.
+        const result = await service.deleteAccount(currentUser(res).id, parsed.data.password);
+        if (result === 'invalid_password') {
+            res.status(403).json({ error: 'invalid_password' });
+            return;
+        }
+        res.clearCookie(SESSION_COOKIE, sessionCookieOptions(options.secureCookies));
+        res.status(204).end();
     });
 
     return router;

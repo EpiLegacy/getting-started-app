@@ -24,6 +24,8 @@ export async function request<T>(url: string, options?: RequestInit): Promise<T>
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     switch (error.code) {
+      case 'invalid_password': return 'Incorrect password. Your account has not been deleted.';
+      case 'invalid_deletion_request': return 'Enter your current password to confirm deletion.';
       case 'invalid_credentials': return 'Incorrect email or password.';
       case 'email_taken': return 'An account already exists for this email.';
       case 'invalid_request': return 'Check your email and password. New passwords must contain 12–128 characters.';

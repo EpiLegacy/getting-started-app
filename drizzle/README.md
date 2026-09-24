@@ -62,8 +62,12 @@ previous version of the code and reversible the same way.
 Existing tasks remain in `todo_items`, with `user_id = NULL`. Signed-in users
 can list and claim these tasks; claiming removes the task from the shared list
 and gives only the claimant permission to edit or delete it. New tasks always
-belong to the session user. Account deletion is restricted while tasks refer to
-that account: it must not accidentally publish private tasks as unassigned.
+belong to the session user. Direct database deletion of an account is restricted while tasks refer to it.
+The authenticated `DELETE /auth/me` endpoint verifies the current password and
+deletes owned tasks and the account in one transaction; sessions cascade. Tasks
+never become unassigned as a side effect of account deletion. No additional schema
+migration is needed for the profile page or this deletion endpoint. Existing
+operational event history is not purged by this endpoint.
 
 The legacy `id` column allows duplicates and NULLs. A new `task_key`
 AUTO_INCREMENT primary key gives every existing row its own identity without

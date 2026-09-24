@@ -139,3 +139,38 @@ describe('authenticate and logout', () => {
         expect(await service().authenticate('token-2')).toBeDefined();
     });
 });
+
+describe('profile and account deletion', () => {
+    test('profile exposes only account id, email and creation date', async () => {
+        await service().register(ALICE);
+        expect(await service().profile('user-1')).toEqual({
+            id: 'user-1', email: ALICE.email, createdAt: NOW.toISOString(),
+        });
+        expect(await service().profile('missing')).toBeUndefined();
+    });
+
+    test('rejects an incorrect password without deleting the account or its sessions', async () => {
+        await service().register(ALICE);
+        expect(await service().deleteAccount('user-1', 'wrong')).toBe('invalid_password');
+        expect(repository.users).toHaveLength(1);
+        expect(repository.sessions).toHaveLength(1);
+    });
+
+    test('deletes the account and every session after password verification', async () => {
+        await service().register(ALICE);
+        await service().login(ALICE);
+        expect(await service().deleteAccount('user-1', ALICE.password)).toBe('deleted');
+        expect(repository.users).toEqual([]);
+        expect(repository.sessions).toEqual([]);
+        expect(await service().authenticate('token-1')).toBeUndefined();
+        expect(await service().authenticate('token-2')).toBeUndefined();
+        expect(await service().deleteAccount('user-1', ALICE.password)).toBe('not_found');
+    });
+
+    test('propagates storage failures instead of reporting successful deletion', async () => {
+        await service().register(ALICE);
+        jest.spyOn(repository, 'deleteAccount').mockRejectedValueOnce(new Error('database unavailable'));
+        await expect(service().deleteAccount('user-1', ALICE.password)).rejects.toThrow('database unavailable');
+        expect(await service().authenticate('token-1')).toBeDefined();
+    });
+});

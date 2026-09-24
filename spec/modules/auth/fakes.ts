@@ -13,6 +13,15 @@ export class FakeRepository implements AuthRepository {
         return 'created' as const;
     }
 
+    async findUserById(id: string) {
+        return this.users.find(user => user.id === id);
+    }
+
+    async deleteAccount(id: string) {
+        this.users = this.users.filter(user => user.id !== id);
+        this.sessions = this.sessions.filter(session => session.userId !== id);
+    }
+
     async findUserByEmail(email: string) {
         return this.users.find(u => u.email === email);
     }
