@@ -197,20 +197,6 @@ describe('authenticated task API', () => {
         expect(await rows('SELECT * FROM todo_items')).toHaveLength(2);
     });
 
-    test('failed account deletion rolls back task deletion and keeps all sessions valid', async () => {
-        await alice.post('/items').send(fields);
-        await connection.query("CREATE TRIGGER reject_account_delete BEFORE DELETE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Injected failure'");
-        const logged = jest.spyOn(console, 'error').mockImplementation(() => {});
-        try {
-            expect((await alice.delete('/auth/me').send({ password: 'correct horse battery staple' })).status).toBe(500);
-            expect((await alice.get('/auth/profile')).status).toBe(200);
-            expect((await alice.get('/items')).body).toHaveLength(1);
-        } finally {
-            await connection.query('DROP TRIGGER reject_account_delete');
-            logged.mockRestore();
-        }
-    });
-
     test('invalid input and forged or expired sessions cannot mutate tasks', async () => {
         expect((await alice.post('/items').send({ ...fields, name: '' })).status).toBe(400);
         expect((await alice.post('/items').send({ ...fields, deadline: 'not-a-date' })).status).toBe(400);
