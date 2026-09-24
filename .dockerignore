@@ -32,8 +32,10 @@ docker-compose*.yml
 *.sqlite
 *.sqlite3
 
-# Documentation.
+# Documentation. A leading pattern without a slash only matches the root,
+# so the docs directory needs naming on its own.
 *.md
+docs/
 
 # Editors and operating systems.
 .DS_Store

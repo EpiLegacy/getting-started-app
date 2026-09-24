@@ -8,6 +8,7 @@ import { startOutboxRelay as startOutboxRelayDrizzle } from './infrastructure/ou
 import { resolvePersistenceDriver } from './shared/persistenceDriver';
 import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
 import { createAuthService } from './modules/auth/service';
+import { startSessionPurge, type RunningPurge } from './modules/auth/sessionPurge';
 
 const authService = isDrizzleConfigured() ? createAuthService(drizzleAuthRepository) : undefined;
 const app = createApp(authService,
@@ -38,9 +39,13 @@ async function startEventing(): Promise<void> {
     console.log('Outbox relay started');
 }
 
+let sessionPurge: RunningPurge | undefined;
+
 // The auth repository uses the Drizzle pool whatever PERSISTENCE_DRIVER says.
 async function startAuth(): Promise<void> {
-    if (isDrizzleConfigured()) await initDrizzlePool();
+    if (!isDrizzleConfigured()) return;
+    await initDrizzlePool();
+    sessionPurge = startSessionPurge(() => drizzleAuthRepository.deleteExpiredSessions(new Date()));
 }
 
 db.init()
@@ -55,6 +60,7 @@ db.init()
     });
 
 const gracefulShutdown = (): void => {
+    sessionPurge?.stop();
     relay?.stop();
     Promise.allSettled([publisher?.close(), closePool(), db.teardown().then(closeDrizzlePool)]).then(() =>
         process.exit(),

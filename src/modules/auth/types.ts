@@ -34,4 +34,6 @@ export interface AuthRepository {
     /** The session's user, or undefined when it does not exist or has expired at `now`. */
     findUserBySession(sessionId: string, now: Date): Promise<User | undefined>;
     deleteSession(sessionId: string): Promise<void>;
+    /** Deletes every session expired at `now`, and says how many. */
+    deleteExpiredSessions(now: Date): Promise<number>;
 }

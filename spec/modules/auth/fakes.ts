@@ -39,6 +39,12 @@ export class FakeRepository implements AuthRepository {
     async deleteSession(sessionId: string) {
         this.sessions = this.sessions.filter(s => s.id !== sessionId);
     }
+
+    async deleteExpiredSessions(now: Date) {
+        const before = this.sessions.length;
+        this.sessions = this.sessions.filter(s => s.expiresAt > now);
+        return before - this.sessions.length;
+    }
 }
 
 /** Reversible and instant, so tests can see what was hashed. */

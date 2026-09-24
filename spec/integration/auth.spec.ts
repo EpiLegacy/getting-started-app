@@ -1,8 +1,10 @@
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import { init as initDrizzlePool, teardown as teardownDrizzlePool } from '../../src/infrastructure/db/drizzle';
+import { drizzleAuthRepository } from '../../src/modules/auth/repository.drizzle';
 import { hashSessionToken } from '../../src/modules/auth/tokens';
 import { createApp } from './support/app';
 import { connect, dropTables, showCreateTable } from './support/database';
@@ -18,7 +20,11 @@ const AUTH_TABLES = ['sessions', 'users'];
 const MIGRATION = path.join(__dirname, '../../drizzle/0001_auth.sql');
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
-const app = createApp();
+// A fresh application per test: the attempt limits are held in memory, and
+// every request here comes from the same address. It listens before the first
+// request, rather than letting supertest open a server per request on a fresh
+// ephemeral port, which occasionally answered with something other than HTTP.
+let app: http.Server;
 let connection: Connection;
 
 async function applyMigration(): Promise<void> {
@@ -48,8 +54,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+    app = http.createServer(createApp());
+    await new Promise<void>(resolve => app.listen(0, '127.0.0.1', resolve));
     await connection.query('DELETE FROM sessions');
     await connection.query('DELETE FROM users');
+});
+
+afterEach(async () => {
+    await new Promise(resolve => app.close(resolve));
 });
 
 afterAll(async () => {
@@ -120,6 +132,22 @@ test('a wrong password is refused', async () => {
     expect(res.status).toBe(401);
 });
 
+test('after five wrong passwords, even the right one is refused for a while', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+
+    for (let i = 0; i < 5; i++) {
+        expect((await request(app).post('/auth/login').send({ ...ALICE, password: 'not the right one' })).status).toBe(401);
+    }
+    const res = await request(app).post('/auth/login').send(ALICE);
+
+    expect(res.status).toBe(429);
+    // Counted from the first failure, which real hashing put a moment ago.
+    expect(Number(res.headers['retry-after'])).toBeGreaterThan(850);
+    expect(Number(res.headers['retry-after'])).toBeLessThanOrEqual(900);
+    // Registration opened one session; the refused login opened none.
+    expect(await rows('SELECT * FROM sessions')).toHaveLength(1);
+});
+
 test('an email differing only in case is the same account', async () => {
     await request(app).post('/auth/register').send(ALICE);
 
@@ -158,4 +186,25 @@ test("deleting a user ends the user's sessions", async () => {
 
     expect(await rows('SELECT * FROM sessions')).toHaveLength(0);
     expect((await agent.get('/auth/me')).status).toBe(401);
+});
+
+test('the purge deletes expired sessions and keeps the others', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+    await request(app).post('/auth/login').send(ALICE);
+    const [kept] = await rows('SELECT id FROM sessions ORDER BY created_at LIMIT 1');
+    await connection.query('UPDATE sessions SET expires_at = ? WHERE id <> ?', [new Date(Date.now() - 1000), kept.id]);
+
+    expect(await drizzleAuthRepository.deleteExpiredSessions(new Date())).toBe(1);
+
+    expect((await rows('SELECT id FROM sessions')).map(row => row.id)).toEqual([kept.id]);
+});
+
+test('a session expiring this very instant is both refused and purged', async () => {
+    await request(app).post('/auth/register').send(ALICE);
+    const now = new Date();
+    await connection.query('UPDATE sessions SET expires_at = ?', [now]);
+    const [session] = await rows('SELECT id FROM sessions');
+
+    expect(await drizzleAuthRepository.findUserBySession(session.id, now)).toBeUndefined();
+    expect(await drizzleAuthRepository.deleteExpiredSessions(now)).toBe(1);
 });
