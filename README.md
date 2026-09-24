@@ -179,7 +179,12 @@ and `/profile` require a session. Users can claim shared unassigned tasks, after
 which those tasks are private. Profile deletion requires the current password
 and permanently removes the account, its sessions, and all owned tasks.
 
-For deployment history and release conventions, see the
-[Drizzle ADR](docs/adr/0001-adopter-drizzle-orm.md) and [release guide](docs/release.md).
+Architecture decisions are recorded in:
+
+- [ADR 0001: Drizzle ORM](docs/adr/0001-adopter-drizzle-orm.md)
+- [ADR 0002: Material UI](docs/adr/0002-adopt-material-ui.md)
+- [ADR 0003: Claiming legacy todos after authentication](docs/adr/0003-claim-legacy-todos-after-authentication.md)
+
+For release conventions, see the [release guide](docs/release.md).
 
 This project originated from the [Docker getting-started application](https://github.com/docker/getting-started).
