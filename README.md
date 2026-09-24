@@ -31,7 +31,11 @@ Add screens in `pages/` and register them in `app/routes.tsx`. Keep feature-spec
 components and data access in `features/<feature>/`; use React Router links for
 internal navigation. `/` is the dashboard, `/todos` is the todo list, and unmatched
 paths show a not-found screen. `/login` and `/register` are public; the dashboard
-and task list require a session. The task list separates your tasks from existing
+and task list require a session. `/profile` shows your email, account ID, and
+creation date without editing controls. From this page, confirm your current
+password to permanently delete your account and all owned tasks (including
+claimed tasks). All sessions are revoked, and shared unassigned tasks and other
+users’ tasks remain unchanged. The task list separates your tasks from existing
 unassigned tasks. Any signed-in account can claim an unassigned task; after a
 successful claim it is private to that account. Simultaneous claims have one
 winner, and the other user sees a conflict message and refreshed list.
@@ -41,11 +45,11 @@ responses and asset 404s. The build output remains `dist/`. Backend code stays o
 `src/client`, and `src/types.ts` contains the shared item contract.
 
 Integration tests require MySQL 8.4 and a dedicated database. Start the local
-server with `docker compose up -d mysql`, then create the test database and
-grant the development user access (once per MySQL volume):
+server with `docker compose up -d mysql`, then grant the development user access
+to the test database (once per MySQL volume):
 
 ```sh
-docker compose exec mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS todos_test CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci; GRANT ALL PRIVILEGES ON todos_test.* TO '\''$MYSQL_USER'\''@'\''%'\'';"'
+docker compose exec mysql sh -lc 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "GRANT ALL PRIVILEGES ON todos_test.* TO '\''$MYSQL_USER'\''@'\''%'\'';"'
 npm run test:integration
 ```
 
@@ -55,8 +59,18 @@ The test command reads connection settings from `.env` and defaults to
 Optional `.env.integration` settings override `.env`; exported shell or CI
 variables take precedence over both files. To select another test database,
 set `MYSQL_DB` in `.env.integration` or the shell. Its name must end with
-`_test`: these tests delete rows and recreate tables. The database must
-already exist and be accessible to `MYSQL_USER`.
+`_test`: these tests delete rows and recreate tables. The runner creates the
+database if missing, resets its tables before each suite,
+and applies every migration in `drizzle/meta/_journal.json`. It also restores a
+fresh migrated schema after the run. `MYSQL_USER` needs privileges to create
+and manage this dedicated database; all data in it is disposable.
+
+If your shell exports the application's `MYSQL_DB` (for example `todos`), the
+safety guard intentionally refuses to run. Override it for the test command:
+
+```sh
+MYSQL_DB=todos_test npm run test:integration
+```
 
 This repository is a sample application for users following the getting started guide at https://docs.docker.com/get-started/.
 

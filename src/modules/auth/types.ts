@@ -4,6 +4,11 @@ export interface User {
     email: string;
 }
 
+/** Read-only profile DTO; dates cross the HTTP boundary as ISO strings. */
+export interface UserProfile extends User {
+    createdAt: string;
+}
+
 export interface StoredUser extends User {
     passwordHash: string;
     createdAt: Date;
@@ -21,6 +26,9 @@ export interface SessionRecord {
 export interface AuthRepository {
     /** One transaction: an account never exists without its first session. */
     createUserWithSession(user: StoredUser, session: SessionRecord): Promise<'created' | 'email_taken'>;
+    findUserById(id: string): Promise<StoredUser | undefined>;
+    /** Delete owned tasks and the user together; sessions cascade from users. */
+    deleteAccount(id: string): Promise<void>;
     findUserByEmail(email: string): Promise<StoredUser | undefined>;
     createSession(session: SessionRecord): Promise<void>;
     /** The session's user, or undefined when it does not exist or has expired at `now`. */

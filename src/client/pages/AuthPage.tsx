@@ -5,7 +5,7 @@ import { useAuth } from '../features/auth/AuthProvider';
 import { errorMessage } from '../lib/http';
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
-    const { user, loading, signIn } = useAuth();
+    const { user, loading, signIn, accountDeleted } = useAuth();
     const location = useLocation();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -33,6 +33,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <Paper sx={{ p: 3 }}>
                 <Stack component="form" onSubmit={submit} spacing={3}>
                     <Typography component="h1" variant="h4">{title}</Typography>
+                    {accountDeleted && <Alert severity="success">
+                        Your account and its tasks have been deleted.
+                    </Alert>}
                     {error && <Alert severity="error">{error}</Alert>}
                     <TextField label="Email" type="email" autoComplete="email" required value={email}
                         onChange={event => setEmail(event.target.value)} />

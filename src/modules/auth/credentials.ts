@@ -27,4 +27,8 @@ export const loginSchema = z.object({
     password: z.string().min(1).max(128),
 });
 
+export const deleteAccountSchema = z.object({
+    password: z.string().min(1).max(128),
+}).strict();
+
 export type Credentials = z.infer<typeof registerSchema>;

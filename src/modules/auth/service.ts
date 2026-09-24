@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Credentials } from './credentials';
 import { hashPassword, verifyPassword } from './password';
 import { hashSessionToken, newSessionToken } from './tokens';
-import type { AuthRepository, User } from './types';
+import type { AuthRepository, User, UserProfile } from './types';
 
 /** Seven days, then the user signs in again. Not extended on use. */
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,6 +39,8 @@ export type LoginResult = ({ kind: 'signed_in' } & SignedIn) | { kind: 'invalid_
 export interface AuthService {
     register(credentials: Credentials): Promise<RegisterResult>;
     login(credentials: Credentials): Promise<LoginResult>;
+    profile(userId: string): Promise<UserProfile | undefined>;
+    deleteAccount(userId: string, password: string): Promise<'deleted' | 'invalid_password' | 'not_found'>;
     logout(token: string): Promise<void>;
     /** The user a cookie token belongs to, if its session is still valid. */
     authenticate(token: string): Promise<User | undefined>;
@@ -95,6 +97,19 @@ export function createAuthService(repository: AuthRepository, overrides: Partial
                 token: session.token,
                 expiresAt: session.record.expiresAt,
             };
+        },
+
+        async profile(userId) {
+            const user = await repository.findUserById(userId);
+            return user && { id: user.id, email: user.email, createdAt: user.createdAt.toISOString() };
+        },
+
+        async deleteAccount(userId, password) {
+            const user = await repository.findUserById(userId);
+            if (!user) return 'not_found';
+            if (!await deps.hasher.verify(password, user.passwordHash)) return 'invalid_password';
+            await repository.deleteAccount(user.id);
+            return 'deleted';
         },
 
         async logout(token) {

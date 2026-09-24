@@ -40,6 +40,8 @@ let connection: Connection;
 
 beforeAll(async () => {
     connection = await connect();
+    // This suite specifically verifies the archived pre-ownership schema.
+    await dropTables(connection, ['todo_items']);
 });
 
 /**

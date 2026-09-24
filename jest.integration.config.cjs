@@ -37,6 +37,9 @@ module.exports = {
   testMatch: ['<rootDir>/spec/integration/**/*.spec.ts'],
   testPathIgnorePatterns: ['/node_modules/'],
   setupFiles: ['<rootDir>/spec/integration/support/guard.ts'],
+  setupFilesAfterEnv: ['<rootDir>/spec/integration/support/setup.ts'],
+  // Leave the database on the current schema after suites that test older DDL.
+  globalTeardown: '<rootDir>/spec/integration/support/prepareDatabase.ts',
   coverageDirectory: 'coverage/integration',
   // The floor in jest.config.cjs guards the unit suite. This suite exercises
   // different code paths, so inheriting it would fail on numbers that were

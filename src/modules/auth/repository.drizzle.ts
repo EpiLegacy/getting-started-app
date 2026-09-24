@@ -1,6 +1,6 @@
 import { and, eq, gt, lte } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
-import { sessions, users } from '../../infrastructure/db/schema';
+import { sessions, todoItems, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';
 
 /**
@@ -23,6 +23,24 @@ export const drizzleAuthRepository: AuthRepository = {
             if (code === 'ER_DUP_ENTRY' && sqlMessage?.includes('uq_users_email')) return 'email_taken';
             throw error;
         }
+    },
+
+    async findUserById(id) {
+        const [user] = await unwrapErrors(() => getDb().select().from(users).where(eq(users.id, id)).limit(1));
+        return user;
+    },
+
+    async deleteAccount(id) {
+        await transaction(async tx => {
+            // Lock the parent first. Concurrent task creations/claims and new
+            // sessions must finish before this lock or fail their foreign key
+            // after deletion; they cannot leave an owned row behind.
+            const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, id)).for('update');
+            if (!user) return;
+            await tx.delete(todoItems).where(eq(todoItems.userId, id));
+            await tx.delete(users).where(eq(users.id, id));
+            // All sessions are removed by the existing ON DELETE CASCADE FK.
+        });
     },
 
     async findUserByEmail(email) {

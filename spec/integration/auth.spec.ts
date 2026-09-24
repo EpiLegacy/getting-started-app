@@ -15,8 +15,8 @@ import { connect, dropTables, showCreateTable } from './support/database';
  * apply, not a copy of it.
  */
 
-// Children first: sessions references users.
-const AUTH_TABLES = ['sessions', 'users'];
+// Children first: tasks and sessions reference users.
+const AUTH_TABLES = ['todo_items', 'sessions', 'users'];
 const MIGRATION = path.join(__dirname, '../../drizzle/0001_auth.sql');
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 

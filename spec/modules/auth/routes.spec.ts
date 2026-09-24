@@ -178,6 +178,65 @@ test('without MySQL, every auth route answers 503 instead of pretending to work'
     }
 });
 
+describe('profile and self-service account deletion', () => {
+    test('profile is private and contains no credentials', async () => {
+        const server = await app();
+        expect((await request(server).get('/auth/profile')).status).toBe(401);
+        const agent = request.agent(server);
+        const registered = await agent.post('/auth/register').send(ALICE);
+        const profile = await agent.get('/auth/profile?userId=someone-else');
+        expect(profile.status).toBe(200);
+        expect(profile.headers['cache-control']).toBe('no-store');
+        expect(profile.body).toEqual({ user: { ...registered.body.user, createdAt: expect.any(String) } });
+        expect(Number.isNaN(Date.parse(profile.body.user.createdAt))).toBe(false);
+        expect(profile.text).not.toContain('password');
+    });
+
+    test('deletion needs a session and correct password and rejects supplied account ids', async () => {
+        const server = await app();
+        expect((await request(server).delete('/auth/me').send({ password: ALICE.password })).status).toBe(401);
+        const agent = request.agent(server);
+        await agent.post('/auth/register').send(ALICE);
+        expect((await agent.delete('/auth/me').send({})).status).toBe(400);
+        expect((await agent.delete('/auth/me').send({ password: ALICE.password, userId: 'other' })).status).toBe(400);
+        const wrong = await agent.delete('/auth/me').send({ password: 'wrong' });
+        expect(wrong.status).toBe(403);
+        expect(wrong.body).toEqual({ error: 'invalid_password' });
+        expect(sessionCookie(wrong)).toBe('');
+        expect((await agent.get('/auth/me')).status).toBe(200);
+    });
+
+    test('deletes only the signed-in account, clears its cookie, and revokes all sessions', async () => {
+        const server = await app();
+        const alice = request.agent(server);
+        const secondSession = request.agent(server);
+        const bob = request.agent(server);
+        await alice.post('/auth/register').send(ALICE);
+        await secondSession.post('/auth/login').send(ALICE);
+        await bob.post('/auth/register').send({ ...ALICE, email: 'bob@example.com' });
+        const deleted = await alice.delete('/auth/me').send({ password: ALICE.password });
+        expect(deleted.status).toBe(204);
+        expect(sessionCookie(deleted)).toMatch(/^sid=; Path=\/; Expires=Thu, 01 Jan 1970/);
+        expect((await alice.get('/auth/me')).status).toBe(401);
+        expect((await secondSession.get('/auth/profile')).status).toBe(401);
+        expect((await request(server).post('/auth/login').send(ALICE)).status).toBe(401);
+        expect((await bob.get('/auth/profile')).body.user.email).toBe('bob@example.com');
+    });
+});
+
+test('profile returns an expired-session response if the account disappears after authentication', async () => {
+    const repository = new FakeRepository();
+    const service = createAuthService(repository, { hasher: fakeHasher });
+    const server = express().use(express.json()).use('/auth', createAuthRouter(service, { secureCookies: false }));
+    const agent = request.agent(server);
+    await agent.post('/auth/register').send(ALICE);
+    jest.spyOn(repository, 'findUserById').mockResolvedValueOnce(undefined);
+    const profile = await agent.get('/auth/profile');
+    expect(profile.status).toBe(401);
+    expect(profile.body).toEqual({ error: 'unauthenticated' });
+    expect(profile.text).not.toContain(ALICE.email);
+});
+
 describe('attempt limits', () => {
     const WRONG = { ...ALICE, password: 'not the right one' };
     let now: number;
