@@ -9,9 +9,13 @@ const deleteItem = require('./routes/deleteItem');
 import { closePool, ensureEventSchema, isMysqlConfigured } from './infrastructure/db/mysql';
 import { RabbitmqPublisher } from './infrastructure/messaging/rabbitmqPublisher';
 import { startOutboxRelay, type RunningRelay } from './infrastructure/outbox/relay';
+import { ensureAuthSchema } from './infrastructure/db/authSchema';
+import authRouter from './routes/auth';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../dist')));
+
+app.use('/auth', authRouter);
 
 app.get('/items', getItems);
 app.post('/items', addItem);
@@ -36,6 +40,7 @@ async function startEventing(): Promise<void> {
 }
 
 db.init()
+    .then(ensureAuthSchema)
     .then(startEventing)
     .then(() => {
         app.listen(3000, () => console.log('Listening on port 3000'));

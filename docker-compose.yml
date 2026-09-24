@@ -22,6 +22,7 @@ services:
       MYSQL_DB: ${MYSQL_DB:-todos}
       # Consumed by the upcoming worker and by the outbox relay.
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
+      SESSION_SECRET: ${SESSION_SECRET:-dev_default_session_secret_32_characters_minimum!}
     depends_on:
       # Load-bearing, not cosmetic: the MySQL adapter gives up after 10s
       # (waitPort), while the first MySQL 8 startup takes far longer. Without
