@@ -3,11 +3,27 @@ import type { ZodType } from 'zod';
 import { SESSION_COOKIE, readCookie, sessionCookieOptions } from './cookies';
 import { loginSchema, registerSchema } from './credentials';
 import { SESSION_TTL_MS, type AuthService, type SignedIn } from './service';
+import { createAuthThrottle, type AuthThrottle } from './throttle';
 import type { User } from './types';
 
 export interface AuthRouterOptions {
     /** Adds the Secure attribute to the session cookie. */
     secureCookies: boolean;
+    /** Attempt limits. A fresh in-memory set by default; tests pass their own clock. */
+    throttle?: AuthThrottle;
+}
+
+/**
+ * 429 with the delay in whole seconds. The password is not checked at all,
+ * so the answer says nothing about whether it was right.
+ */
+function tooManyAttempts(res: Response, retryAfterMs: number): void {
+    res.set('Retry-After', String(Math.ceil(retryAfterMs / 1000)));
+    res.status(429).json({ error: 'too_many_attempts' });
+}
+
+function clientAddress(req: Request): string {
+    return req.ip ?? 'unknown';
 }
 
 function parseBody<T>(schema: ZodType<T>, req: Request, res: Response): T | undefined {
@@ -67,6 +83,8 @@ export function createAuthRouter(service: AuthService | undefined, options: Auth
 
     // The session was created a moment ago with exactly this lifetime. Reading
     // the clock again here would make the cookie a millisecond shorter.
+    const throttle = options.throttle ?? createAuthThrottle();
+
     const signIn = (res: Response, session: SignedIn, status: number) => {
         res.cookie(SESSION_COOKIE, session.token, sessionCookieOptions(options.secureCookies, SESSION_TTL_MS));
         res.status(status).json({ user: session.user });
@@ -75,6 +93,13 @@ export function createAuthRouter(service: AuthService | undefined, options: Auth
     router.post('/register', async (req, res) => {
         const credentials = parseBody(registerSchema, req, res);
         if (!credentials) return;
+
+        const ip = clientAddress(req);
+        const wait = throttle.registerPerIp.retryAfterMs(ip);
+        if (wait > 0) return tooManyAttempts(res, wait);
+        // Counted before hashing, so concurrent requests cannot all slip
+        // through before the first one is recorded.
+        throttle.registerPerIp.record(ip);
 
         const result = await service.register(credentials);
         if (result.kind === 'email_taken') {
@@ -88,7 +113,25 @@ export function createAuthRouter(service: AuthService | undefined, options: Auth
         const credentials = parseBody(loginSchema, req, res);
         if (!credentials) return;
 
+        const ip = clientAddress(req);
+        // The email is already normalised: "Alice@x.io" and "alice@x.io" share a count.
+        const account = `${ip}|${credentials.email}`;
+        const wait = Math.max(
+            throttle.loginPerAccount.retryAfterMs(account),
+            throttle.loginPerIp.retryAfterMs(ip),
+        );
+        if (wait > 0) return tooManyAttempts(res, wait);
+
+        // Counted as a failure up front, so concurrent guesses cannot all get
+        // through before the first result is known, then withdrawn on success.
+        throttle.loginPerAccount.record(account);
+        throttle.loginPerIp.record(ip);
+
         const result = await service.login(credentials);
+        if (result.kind === 'signed_in') {
+            throttle.loginPerAccount.reset(account);
+            throttle.loginPerIp.release(ip);
+        }
         if (result.kind === 'invalid_credentials') {
             // One answer for an unknown email and a wrong password.
             res.status(401).json({ error: 'invalid_credentials' });

@@ -15,6 +15,7 @@ import { resolvePersistenceDriver } from './shared/persistenceDriver';
 import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
 import { createAuthRouter } from './modules/auth/routes';
 import { createAuthService } from './modules/auth/service';
+import { startSessionPurge, type RunningPurge } from './modules/auth/sessionPurge';
 
 // Accounts live in MySQL only (ADR 0001). The session cookie is Secure in the
 // production image unless SESSION_COOKIE_SECURE=false, for a demo served over
@@ -68,9 +69,13 @@ async function startEventing(): Promise<void> {
     console.log('Outbox relay started');
 }
 
+let sessionPurge: RunningPurge | undefined;
+
 // The auth repository uses the Drizzle pool whatever PERSISTENCE_DRIVER says.
 async function startAuth(): Promise<void> {
-    if (isDrizzleConfigured()) await initDrizzlePool();
+    if (!isDrizzleConfigured()) return;
+    await initDrizzlePool();
+    sessionPurge = startSessionPurge(() => drizzleAuthRepository.deleteExpiredSessions(new Date()));
 }
 
 db.init()
@@ -85,6 +90,7 @@ db.init()
     });
 
 const gracefulShutdown = (): void => {
+    sessionPurge?.stop();
     relay?.stop();
     Promise.allSettled([publisher?.close(), closePool(), db.teardown()]).then(() =>
         process.exit(),

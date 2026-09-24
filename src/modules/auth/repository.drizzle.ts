@@ -1,4 +1,4 @@
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, gt, lte } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
 import { sessions, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';
@@ -48,5 +48,11 @@ export const drizzleAuthRepository: AuthRepository = {
 
     async deleteSession(sessionId) {
         await unwrapErrors(() => getDb().delete(sessions).where(eq(sessions.id, sessionId)));
+    },
+
+    // "Expired" is the complement of findUserBySession's expires_at > now.
+    async deleteExpiredSessions(now) {
+        const [result] = await unwrapErrors(() => getDb().delete(sessions).where(lte(sessions.expiresAt, now)));
+        return result.affectedRows;
     },
 };
