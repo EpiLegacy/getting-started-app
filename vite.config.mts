@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-    root: 'src/static',
+    root: 'src/client',
     publicDir: false,
     plugins: [react({ jsxRuntime: 'classic' })],
     build: {
@@ -13,6 +13,7 @@ export default defineConfig({
         port: 5173,
         proxy: {
             '/items': 'http://localhost:3000',
+            '/auth': 'http://localhost:3000',
         },
     },
 });

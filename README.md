@@ -1,11 +1,44 @@
 # Getting started
 
 For local development, run `npm install` and `npm run dev`.
+Authentication and task ownership require MySQL with migrations applied. Supply
+`MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_DB` to the API and
+`npm run db:migrate`. `docker compose up --build` provides MySQL, migrations,
+the API, and the event broker. SQLite-only startup still serves the app and health
+check, but authenticated endpoints return 503; existing SQLite data remains intact.
+See [the ownership migration guide](drizzle/README.md#task-ownership-0002_task_ownershipsql)
+for preserving and importing old data before enabling accounts.
 SQLite stores tasks in `data/todo.db` relative to the working directory.
 To use another writable location, run
 `SQLITE_DB_LOCATION=/path/to/todo.db npm run dev`.
 Both the database file and its parent directory must be writable.
 Existing databases at `/etc/todos/todo.db` are not moved automatically.
+
+The React frontend lives in `src/client`:
+
+```text
+src/client/
+  main.tsx                 # Browser entry point and router provider
+  app/                     # App providers, route definitions, layout, theme
+  pages/                   # Route-level screens
+  features/auth/           # Session state, auth API, route protection
+  features/todos/          # Todo components, API calls, and styles
+  lib/                     # Shared browser utilities (HTTP client)
+  index.html               # Vite HTML entry
+```
+
+Add screens in `pages/` and register them in `app/routes.tsx`. Keep feature-specific
+components and data access in `features/<feature>/`; use React Router links for
+internal navigation. `/` is the dashboard, `/todos` is the todo list, and unmatched
+paths show a not-found screen. `/login` and `/register` are public; the dashboard
+and task list require a session. The task list separates your tasks from existing
+unassigned tasks. Any signed-in account can claim an unassigned task; after a
+successful claim it is private to that account. Simultaneous claims have one
+winner, and the other user sees a conflict message and refreshed list.
+Vite handles direct links during development;
+Express serves the built app for frontend routes in production, preserving API
+responses and asset 404s. The build output remains `dist/`. Backend code stays outside
+`src/client`, and `src/types.ts` contains the shared item contract.
 
 Integration tests require MySQL 8.4 and a dedicated database. Start the local
 server with `docker compose up -d mysql`, then create the test database and
