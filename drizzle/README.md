@@ -1,4 +1,133 @@
-# Drizzle migrations
+# Drizzle migrations and legacy data import
+
+[Back to README](../README.md) · [API reference](../docs/api.md)
+
+- [Move from legacy SQLite to MySQL](#move-from-legacy-sqlite-to-mysql)
+- [Migration scripts](#scripts)
+- [Baseline migration](#baseline-migration-0000_silky_leosql)
+- [Task ownership](#task-ownership-0002_task_ownershipsql)
+
+## Move from legacy SQLite to MySQL
+
+Use Node.js 24, `npm ci`, and a reachable MySQL 8.4 database. Import legacy
+rows before enabling accounts or allowing users to claim tasks. Run commands
+from the repository root. For a new local target, copy `.env.example` to `.env`
+if needed, then start **only MySQL**:
+
+```sh
+docker compose up -d --wait mysql
+```
+
+1. Stop all application instances, workers, and other writers using the source
+   SQLite or target MySQL databases. For the Compose stack, use
+   `docker compose stop api worker`. Keep MySQL running. Back up the target
+   MySQL database with your normal backup procedure and retain the original
+   SQLite database, including any journal/WAL sidecar files. Plan a maintenance
+   window: the ownership migration rebuilds `todo_items`.
+2. Locate the actual SQLite file. The current app defaults to `data/todo.db`,
+   but the importer defaults to `/etc/todos/todo.db` (or `SQLITE_DB_LOCATION`).
+   **Pass `--sqlite` explicitly** to avoid importing the wrong file. If the file
+   is inside a container or volume, copy it and its sidecars while writers are
+   stopped to a location accessible to this command.
+3. Export the target connection settings. The importer and Drizzle CLI do not
+   automatically load `.env`. For a trusted, shell-compatible local `.env`:
+
+   ```sh
+   set -a
+   . ./.env
+   set +a
+   export MYSQL_HOST=127.0.0.1
+   ```
+
+   Set `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_DB` to your intended target;
+   the database must already exist. Compose creates it on first initialization.
+   For a remote target, use its hostname and credentials instead.
+4. Run the default dry run (replace the SQLite path):
+
+   ```sh
+   npm run db:merge-sqlite -- --sqlite /absolute/path/to/todo.db \
+     --mysql-port "${MYSQL_PORT:-3306}" --report /tmp/kanban-merge-dry-run.json
+   ```
+
+   This reads both databases without modifying them and writes a JSON report.
+   Review `summary.toInsert`, `alreadyPresent`, `exactDuplicatesInSqlite`, and
+   `conflicts`, plus the detailed conflict rows. Report paths must be new and
+   their parent directories must exist: the script refuses to overwrite files.
+5. Apply the reviewed import while writers remain stopped:
+
+   ```sh
+   npm run db:merge-sqlite -- --apply --sqlite /absolute/path/to/todo.db \
+     --mysql-port "${MYSQL_PORT:-3306}" --backup-dir ./backups/sqlite \
+     --report /tmp/kanban-merge-applied.json
+   ```
+
+   Apply creates a timestamped SQLite copy (including existing sidecars), then
+   inserts compatible rows and saves conflicts in `todo_items_merge_conflicts`.
+   It never updates or deletes existing MySQL rows. Before committing, it checks
+   that each source row is represented by a target row or a recorded conflict.
+   Data writes roll back if verification fails; table creation occurs before
+   that transaction. The report is written **after commit**, so a report-write
+   failure does not mean the import rolled back. Re-running the importer is
+   idempotent; use a fresh report filename.
+6. Review and resolve conflicts manually before opening the app to users. The
+   report includes the source row, reason, and relevant MySQL values; the
+   conflict table preserves these for review. Reasons include invalid values,
+   overlong fields, differing MySQL rows with the same ID, and differing SQLite
+   rows sharing an ID. Conflicts are **not** visible as tasks in the app. There
+   is no automatic conflict-resolution command: reconcile each row according
+   to the intended data, preserving the report and backups.
+7. Apply the schema migrations using the same target variables:
+
+   ```sh
+   npm run db:migrate
+   ```
+
+   This creates the account/session tables and gives tasks generated keys and
+   nullable ownership. Do not execute every SQL file manually: the journal is
+   authoritative, and `0001_complex_ben_urich.sql` is not journaled.
+8. Verify the import report against source values and the target. In a MySQL
+   client connected to the target database, check:
+
+   ```sql
+   SELECT COUNT(*) AS total,
+          COUNT(task_key) AS with_key,
+          COUNT(DISTINCT task_key) AS distinct_keys,
+          SUM(user_id IS NULL) AS unassigned
+   FROM todo_items;
+   SELECT reason, COUNT(*) FROM todo_items_merge_conflicts GROUP BY reason;
+   ```
+
+   Every task must have a distinct non-NULL key. On a legacy target with no
+   accounts/claims, all tasks should be unassigned. Compare field values too:
+   identical source duplicates are collapsed, and conflicts are stored
+   separately, so source and target task counts need not match.
+9. Start the full stack with `docker compose up --build -d`, or follow the
+   [local development setup](../README.md#local-development). Register/sign in,
+   open the unassigned task list, and claim an imported task. Retain backups
+   and reports until verification is complete. Do not run the old anonymous
+   API alongside the authenticated application.
+
+### Import scope and options
+
+The importer reads **only `id`, `name`, and `completed`** from SQLite's
+`todo_items`. It does not migrate accounts, ownership, deadlines, priorities,
+or other tables. If your SQLite database has additional fields, retain them in
+backups and plan their separate transfer before cutover. Identical duplicate
+rows are represented once; differing rows with the same ID become conflicts.
+
+| Option | Default / purpose |
+| --- | --- |
+| `--apply` | Omit for a dry run; include to write MySQL data and back up SQLite. |
+| `--sqlite <path>` | `SQLITE_DB_LOCATION`, otherwise `/etc/todos/todo.db`. |
+| `--mysql-port <port>` | `3306`; the importer does not read `MYSQL_PORT` automatically. |
+| `--backup-dir <dir>` | Next to the SQLite file; created on apply if needed. |
+| `--report <path>` | `./merge-report-<timestamp>.json`; must not already exist. |
+
+The importer supports `MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`,
+and their `*_FILE` variants. Backups/reports contain task data; keep them out of
+commits and retain them in an appropriate storage location.
+
+## Migration lifecycle
 
 Migrations run as a separate deployment step (`npm run db:migrate`), **never**
 at application start-up (`src/index.ts` does not call it).
@@ -13,9 +142,10 @@ at application start-up (`src/index.ts` does not call it).
 - `npm run db:check` — fails if the migration history itself is inconsistent
   (e.g. two migrations edited to claim the same position). Run in CI.
 
-All three read the same connection variables as the application
-(`MYSQL_HOST`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`, and their
-`*_FILE` counterparts — see `drizzle.config.ts`).
+The configuration reads `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`,
+`MYSQL_PASSWORD`, `MYSQL_DB`, and their `*_FILE` counterparts (file values take
+precedence; see `drizzle.config.ts`). Export these before running the CLI.
+`db:generate` and `db:check` do not require a live database.
 
 ## Baseline migration (`0000_silky_leo.sql`)
 
@@ -46,16 +176,16 @@ Verified on 2026-09-17 against a throwaway MySQL 8.4.11:
 Run `npm run db:migrate` normally. Existing tables and their data are left
 untouched; missing baseline tables are created, and Drizzle records the
 migration after all statements succeed. As with any baseline, first verify
-that an existing production schema matches `src/infrastructure/db/schema.ts`.
+that existing tables match the baseline SQL. The current
+`src/infrastructure/db/schema.ts` also includes later migrations.
 
 ## Baseline rollback
 
 The baseline does not drop or alter existing columns (see ADR 0001).
-The baseline only describes tables that already exist, so there is nothing to
-roll back: reverting to `PERSISTENCE_DRIVER=legacy` (see `src/persistence`)
-needs no migration change either way. Future schema changes follow the
-expand/contract model, which keeps every migration compatible with the
-previous version of the code and reversible the same way.
+The baseline is additive and needs no schema rollback when changing persistence
+adapters. This does not make a rollback to an older application safe after
+ownership is enabled: see the ownership warning below. Prefer additive schema
+changes and assess rollback compatibility for each migration.
 
 ## Task ownership (`0002_task_ownership.sql`)
 
