@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: Kanban
+    orgId: 1
+    folder: Kanban
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    # Polling works with Docker Desktop/WSL bind mounts too.
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

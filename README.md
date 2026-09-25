@@ -8,7 +8,7 @@ Accounts and task ownership require MySQL with migrations applied.
 - [Migrate legacy SQLite data to MySQL](drizzle/README.md#move-from-legacy-sqlite-to-mysql)
 - [Contribute](#contribute)
 - [Backend API reference](docs/api.md)
-- [Monitor the API with Prometheus](docs/monitoring.md)
+- [Grafana dashboard and monitoring](docs/monitoring.md)
 - [Database migrations](drizzle/README.md)
 
 ## Set up the app
@@ -27,8 +27,9 @@ docker compose up --build -d
 ```
 
 Compose starts MySQL 8.4, RabbitMQ, a one-shot migration service, the API serving
-the built frontend, the notification worker, and Prometheus. The API and worker
-wait for migrations to succeed.
+the built frontend, the notification worker, Prometheus, Grafana, and a MySQL exporter.
+The API and worker wait for migrations to succeed. Existing database volumes
+need the one-time [monitoring-account setup](docs/monitoring.md#start-and-inspect).
 
 Open <http://localhost:3000> and register an account. RabbitMQ management is at
 <http://localhost:15672> (local defaults: `guest` / `guest`). Check startup with:
@@ -38,6 +39,10 @@ docker compose ps -a
 docker compose logs migration api worker
 curl http://localhost:3000/health
 ```
+
+The Grafana dashboard is at <http://localhost:3001/d/kanban-overview>
+(local login: `admin` / `grafana_dev_password`). It is provisioned automatically;
+see the [monitoring guide](docs/monitoring.md#grafana-dashboard) for usage and setup.
 
 Use `docker compose down` to stop the stack; named volumes retain database and
 broker data. Adding `-v` deletes those volumes and their data.
@@ -96,10 +101,13 @@ reuse development credentials in an exposed deployment.
 | `MYSQL_PORT` | MySQL connection port, default `3306`; also the host port published by Compose. |
 | `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB` | Application database credentials and database name. |
 | `MYSQL_ROOT_PASSWORD` | Initializes the Compose MySQL root account. |
+| `MYSQL_EXPORTER_PASSWORD` | Password for the dedicated monitoring account; local default `monitoring_dev_password`. Existing database volumes need the [monitoring setup command](docs/monitoring.md#start-and-inspect). |
 | `RABBITMQ_URL` | API/worker broker URL; defaults to `amqp://guest:guest@localhost:5672`. |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Compose broker credentials. |
 | `API_PORT`, `RABBITMQ_PORT`, `RABBITMQ_UI_PORT` | Compose host ports, default `3000`, `5672`, and `15672`. The local API always listens on `3000`. |
 | `PROMETHEUS_PORT` | Localhost-only Prometheus UI port, default `9090`. See [monitoring](docs/monitoring.md). |
+| `GRAFANA_PORT` | Localhost-only Grafana UI port, default `3001`. |
+| `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD` | Initial Grafana login, defaults `admin` / `grafana_dev_password`. Only initializes a new Grafana data volume. |
 | `PERSISTENCE_DRIVER` | `legacy` (default) or `drizzle` for persistence/eventing adapters. Auth and task HTTP routes always use Drizzle/MySQL. |
 | `SESSION_COOKIE_SECURE` | Production cookies require HTTPS unless set to `false`. Compose defaults to `false` for local HTTP. |
 | `SQLITE_DB_LOCATION` | SQLite fallback path, default `data/todo.db` relative to the working directory. |
