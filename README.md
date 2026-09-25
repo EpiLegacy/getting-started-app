@@ -8,6 +8,7 @@ Accounts and task ownership require MySQL with migrations applied.
 - [Migrate legacy SQLite data to MySQL](drizzle/README.md#move-from-legacy-sqlite-to-mysql)
 - [Contribute](#contribute)
 - [Backend API reference](docs/api.md)
+- [Monitor the API with Prometheus](docs/monitoring.md)
 - [Database migrations](drizzle/README.md)
 
 ## Set up the app
@@ -26,8 +27,8 @@ docker compose up --build -d
 ```
 
 Compose starts MySQL 8.4, RabbitMQ, a one-shot migration service, the API serving
-the built frontend, and the notification worker. The API and worker wait for
-migrations to succeed.
+the built frontend, the notification worker, and Prometheus. The API and worker
+wait for migrations to succeed.
 
 Open <http://localhost:3000> and register an account. RabbitMQ management is at
 <http://localhost:15672> (local defaults: `guest` / `guest`). Check startup with:
@@ -98,6 +99,7 @@ reuse development credentials in an exposed deployment.
 | `RABBITMQ_URL` | API/worker broker URL; defaults to `amqp://guest:guest@localhost:5672`. |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | Compose broker credentials. |
 | `API_PORT`, `RABBITMQ_PORT`, `RABBITMQ_UI_PORT` | Compose host ports, default `3000`, `5672`, and `15672`. The local API always listens on `3000`. |
+| `PROMETHEUS_PORT` | Localhost-only Prometheus UI port, default `9090`. See [monitoring](docs/monitoring.md). |
 | `PERSISTENCE_DRIVER` | `legacy` (default) or `drizzle` for persistence/eventing adapters. Auth and task HTTP routes always use Drizzle/MySQL. |
 | `SESSION_COOKIE_SECURE` | Production cookies require HTTPS unless set to `false`. Compose defaults to `false` for local HTTP. |
 | `SQLITE_DB_LOCATION` | SQLite fallback path, default `data/todo.db` relative to the working directory. |
