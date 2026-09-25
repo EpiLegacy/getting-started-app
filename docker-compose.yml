@@ -85,6 +85,10 @@ services:
       MYSQL_USER: ${MYSQL_USER:-todo}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
       MYSQL_DB: ${MYSQL_DB:-todos}
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 465
+      SMTP_USER: bap.fouillet@gmail.com
+      SMTP_PASS: gxthotbswphjqdqe
 
     depends_on:
       mysql:
@@ -108,6 +112,10 @@ services:
       MYSQL_USER: ${MYSQL_USER:-todo}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
       MYSQL_DB: ${MYSQL_DB:-todos}
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 465
+      SMTP_USER: bap.fouillet@gmail.com
+      SMTP_PASS: gxthotbswphjqdqe
 
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
       # legacy|drizzle (ADR 0001). Unset here defaults to legacy in the app
@@ -152,6 +160,10 @@ services:
       MYSQL_USER: ${MYSQL_USER:-todo}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
       MYSQL_DB: ${MYSQL_DB:-todos}
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 465
+      SMTP_USER: bap.fouillet@gmail.com
+      SMTP_PASS: gxthotbswphjqdqe
 
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
 

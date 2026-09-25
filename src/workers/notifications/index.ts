@@ -7,6 +7,7 @@ import { eventEnvelopeSchema } from '../../shared/events/envelope';
 import { resolvePersistenceDriver } from '../../shared/persistenceDriver';
 import { handleTaskEvent } from './handler';
 import { handleTaskEvent as handleTaskEventDrizzle } from './handler.drizzle';
+import { startEmailRelay } from './emailRelay';
 
 const PREFETCH = 10;
 // A separate process from the API: it validates PERSISTENCE_DRIVER on its
@@ -21,6 +22,8 @@ const runHandleTaskEvent = useDrizzle ? handleTaskEventDrizzle : handleTaskEvent
 async function main(): Promise<void> {
     await ensureEventSchema();
     if (useDrizzle) await initDrizzlePool();
+
+    const emailRelay = startEmailRelay({ intervalMs: 5000, batchSize: 20 });
 
     // The whole consumer setup lives in the recovery hook, which amqplib runs
     // after EVERY successful connection. A channel belongs to the connection
@@ -57,6 +60,7 @@ async function main(): Promise<void> {
 
     const shutdown = async (): Promise<void> => {
         try {
+            emailRelay.stop();
             await model.close();
             await closePool();
             if (useDrizzle) await teardownDrizzlePool();
