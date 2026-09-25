@@ -25,7 +25,7 @@ RUN apt-get update \
 # change, not on every source edit.
 COPY package.json package-lock.json ./
 # NODE_ENV=production makes npm skip devDependencies, hence the explicit flag.
-RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm i --include=dev
+RUN --mount=type=cache,target=/root/.npm npm_config_build_from_source=true npm ci --include=dev
 
 # ---------------------------------------------------------------------------
 # build - types checked, backend compiled, frontend bundled
