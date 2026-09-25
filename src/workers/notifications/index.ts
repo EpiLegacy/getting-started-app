@@ -6,6 +6,7 @@ import { assertTopology, NOTIFICATIONS_QUEUE } from '../../infrastructure/messag
 import { resolvePersistenceDriver } from '../../shared/persistenceDriver';
 import { handleTaskEvent } from './handler';
 import { handleTaskEvent as handleTaskEventDrizzle } from './handler.drizzle';
+import { startEmailRelay } from './emailRelay';
 import { createWorkerMetrics } from './metrics';
 import { createMessageProcessor } from './consumer';
 
@@ -30,6 +31,8 @@ async function main(): Promise<void> {
     });
     await ensureEventSchema();
     if (useDrizzle) await initDrizzlePool();
+
+    const emailRelay = startEmailRelay({ intervalMs: 5000, batchSize: 20 });
 
     // The whole consumer setup lives in the recovery hook, which amqplib runs
     // after EVERY successful connection. A channel belongs to the connection
@@ -78,6 +81,7 @@ async function main(): Promise<void> {
         metrics.setConsuming(false);
         metricsServer.close();
         try {
+            emailRelay.stop();
             await model.close();
             await closePool();
             if (useDrizzle) await teardownDrizzlePool();
