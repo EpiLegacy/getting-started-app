@@ -10,6 +10,7 @@ Accounts and task ownership require MySQL with migrations applied.
 - [Backend API reference](docs/api.md)
 - [Grafana dashboard and monitoring](docs/monitoring.md)
 - [Database migrations](drizzle/README.md)
+- [Releases](docs/release.md) and [deployment](docs/deployment.md)
 
 ## Set up the app
 
@@ -195,6 +196,7 @@ Architecture decisions are recorded in:
 - [ADR 0002: Material UI](docs/adr/0002-adopt-material-ui.md)
 - [ADR 0003: Claiming legacy todos after authentication](docs/adr/0003-claim-legacy-todos-after-authentication.md)
 
-For release conventions, see the [release guide](docs/release.md).
+For release conventions, see the [release guide](docs/release.md); for
+putting a release on a server, the [deployment guide](docs/deployment.md).
 
 This project originated from the [Docker getting-started application](https://github.com/docker/getting-started).

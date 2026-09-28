@@ -1,0 +1,113 @@
+name: Deploy
+
+# Every successful release goes to production on its own: that is the
+# "continuous" in continuous delivery. Running it by hand deploys any version
+# already released, which is also how a rollback is done.
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to deploy, e.g. 1.2.0
+        required: true
+
+# One deployment at a time, never cancelled halfway: the next one waits.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to production
+    # A failed release published nothing, so there is nothing to deploy.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # The environment holds the server's address and SSH key, and records
+    # every deployment on the repository's Environments page.
+    environment:
+      name: production
+      url: ${{ vars.DEPLOY_URL }}
+    env:
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || 'legacy-kanban' }}
+      DEPLOY_URL: ${{ vars.DEPLOY_URL }}
+    steps:
+      - name: Resolve the version
+        id: version
+        env:
+          # The release run's branch is the tag it was started by, e.g. v1.2.0.
+          REQUESTED: ${{ inputs.version || github.event.workflow_run.head_branch }}
+        run: |
+          version="${REQUESTED#v}"
+          case "$version" in
+            '' | *[!0-9A-Za-z._-]*)
+              echo "::error title=Invalid version::\"$REQUESTED\" is not a version."
+              exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Deploying $version"
+
+      # Until a server is configured, a release still succeeds and says here
+      # that nothing was deployed, rather than failing every release.
+      - name: Check the target is configured
+        id: target
+        run: |
+          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_URL" ]; then
+            echo "::warning title=No production server::Set DEPLOY_HOST, DEPLOY_USER and DEPLOY_URL on the production environment (docs/deployment.md)."
+            echo "### Nothing deployed: no production server is configured" >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The deployment files of the version being deployed, not of main.
+      - uses: actions/checkout@v4
+        if: steps.target.outputs.configured == 'true'
+        with:
+          ref: v${{ steps.version.outputs.version }}
+          sparse-checkout: deploy
+
+      - name: Set up SSH
+        if: steps.target.outputs.configured == 'true'
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          # Pinned rather than trusted on first use: a runner must not accept
+          # whichever host answers at that address.
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host production
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            IdentityFile ~/.ssh/id_deploy
+            IdentitiesOnly yes
+          EOF
+
+      # The server's .env is never sent: it stays on the server.
+      - name: Copy the deployment files
+        if: steps.target.outputs.configured == 'true'
+        run: |
+          ssh production "mkdir -p '$DEPLOY_PATH'"
+          scp deploy/compose.yml deploy/Caddyfile deploy/deploy.sh deploy/.env.example "production:$DEPLOY_PATH/"
+
+      - name: Deploy
+        if: steps.target.outputs.configured == 'true'
+        run: ssh production "'$DEPLOY_PATH/deploy.sh' '${{ steps.version.outputs.version }}'"
+
+      # Checked from outside, through DNS, the certificate and the proxy.
+      - name: Check the public address
+        if: steps.target.outputs.configured == 'true'
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$DEPLOY_URL/health"
+          echo
+          echo "### Deployed ${{ steps.version.outputs.version }} to $DEPLOY_URL" >> "$GITHUB_STEP_SUMMARY"
