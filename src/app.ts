@@ -4,6 +4,8 @@ import { createAuthRouter } from './modules/auth/routes';
 import type { AuthService } from './modules/auth/service';
 import { createTaskRouter } from './modules/tasks/routes';
 import { taskRepository } from './modules/tasks/repository.drizzle';
+import { createProjectRouter } from './modules/project/routes';
+import { projectRepository } from './modules/project/repository.drizzle';
 
 /** Shared by production and HTTP integration tests; creates no connections. */
 export function createApp(authService: AuthService | undefined, secureCookies: boolean) {
@@ -18,6 +20,7 @@ export function createApp(authService: AuthService | undefined, secureCookies: b
     app.use('/auth', createAuthRouter(authService, { secureCookies }));
 
     app.use('/items', createTaskRouter(authService, taskRepository));
+    app.use('/projects', createProjectRouter(authService,projectRepository(),),);
 
     // Serve the single-page application when a frontend route is opened directly.
     app.get('/{*path}', (req, res, next) => {

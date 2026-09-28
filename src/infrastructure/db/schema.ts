@@ -2,8 +2,47 @@ import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryK
 import { Priority } from '../../types';
 
 /**
- * Legacy fields remain nullable and unchanged. taskKey uniquely identifies
- * each physical row, including rows with duplicate or NULL legacy ids.
+ * Projects.
+ *
+ * A project belongs to one user and contains multiple todo items.
+ */
+export const projects = mysqlTable(
+    'projects',
+    {
+      id: char('id', { length: 36 })
+        .notNull()
+        .primaryKey(),
+  
+      name: varchar('name', {
+        length: 255,
+      }).notNull(),
+  
+      userId: char('user_id', {
+        length: 36,
+      }).references(() => users.id, {
+        onDelete: 'set null',
+      }),
+  
+      itemsTodoId: json('items_todo_id')
+        .$type<string[]>()
+        .notNull()
+        .default([]),
+  
+      createdAt: datetime('created_at', {
+        fsp: 3,
+      }).notNull(),
+    },
+    table => [
+      index('idx_projects_user').on(table.userId),
+    ],
+  );
+
+/**
+ * Legacy fields remain nullable and unchanged.
+ *
+ * taskKey uniquely identifies each physical row, including rows
+ * with duplicate or NULL legacy ids.
+ *
  * userId = NULL means an existing task is available to claim.
  */
 export const todoItems = mysqlTable('todo_items', {

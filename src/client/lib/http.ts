@@ -4,20 +4,37 @@ export class ApiError extends Error {
   }
 }
 
-export async function request<T>(url: string, options?: RequestInit): Promise<T> {
+export async function request<T>(
+  url: string,
+  options?: RequestInit,
+): Promise<T> {
   const response = await fetch(url, {
     ...options,
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    if (response.status === 401 && !['/auth/login', '/auth/register'].includes(url)) {
+    if (
+      response.status === 401 &&
+      !['/auth/login', '/auth/register'].includes(url)
+    ) {
       window.dispatchEvent(new Event('auth:unauthenticated'));
     }
-    throw new ApiError(response.status, body.error ?? 'request_failed');
+
+    throw new ApiError(
+      response.status,
+      body.error ?? body.message ?? 'request_failed',
+    );
   }
-  if (response.status === 204) return undefined as T;
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }
 

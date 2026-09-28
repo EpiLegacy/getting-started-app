@@ -22,6 +22,20 @@
       "when": 1790189822770,
       "tag": "0002_task_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1790321461302,
+      "tag": "0003_blushing_wendigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1790325777850,
+      "tag": "0004_hesitant_miek",
+      "breakpoints": true
     }
   ]
 }

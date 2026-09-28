@@ -8,6 +8,16 @@ export interface Item {
     priorisation: Priority;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  user: {
+    userid: string,
+    email: string,
+  }
+  items: Item[],
+}
+
 export interface StoredItem {
     id: string;
     name: string;

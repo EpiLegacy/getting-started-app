@@ -25,6 +25,7 @@ import AddIcon from '@mui/icons-material/Add';
 
 import '../features/todos/todos.css';
 import AddItem from '../features/todos/components/AddItem';
+import AddProject from '../features/todos/components/AddProject';
 import React from 'react';
 import { itemsApi } from '../features/todos/api/itemsApi';
 import { useTasks } from '../features/todos/useTasks';
@@ -35,8 +36,11 @@ type SortKey = 'deadline' | 'priorisation';
 export default function TodosPage() {
   const { items, unassigned, loading, pending, error, refresh, mutate } = useTasks();
   const [open, setOpen] = useState<boolean>(false);
+  const [openProject, setOpenProject] = useState<boolean>(false);
   const handleOpen = () => setOpen(true);
   const handleClose = () => setOpen(false);
+  const handleOpenProject = () => setOpenProject(true);
+  const handleCloseProject = () => setOpenProject(false);
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('deadline');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -137,7 +141,6 @@ export default function TodosPage() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 4,
             mb: 2,
           }}
         >
@@ -159,20 +162,34 @@ export default function TodosPage() {
               },
             }}
           />
-          <Button
-            disabled={loading || pending}
-            onClick={handleOpen}
-            variant="contained"
-          >
-            <AddIcon />
-            Add item
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2, }}>
+            <Button
+              onClick={handleOpen}
+              variant="contained"
+            >
+              <AddIcon />
+              Add item
+            </Button>
+            <Button
+              onClick={handleOpenProject}
+              variant="contained"
+            >
+              <AddIcon />
+              Add project
+            </Button>
+          </Box>
         </Box>
+        <AddProject
+          open={openProject}
+          handleClose={handleCloseProject}
+          onCreated={refresh}
+        />
         <AddItem
           open={open}
           handleClose={handleClose}
           onCreated={refresh}
         />
+
         {!loading && filteredItems.length === 0 && <Typography sx={{ my: 2 }}>{items.length ? 'No matching tasks.' : 'No tasks yet. Add one or claim an unassigned task below.'}</Typography>}
         <TableContainer component={Paper}>
           <Table sx={{ minWidth: 650 }}>
