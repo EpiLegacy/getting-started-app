@@ -4,22 +4,12 @@ import request from 'supertest';
 import { createAuthRouter } from '../../../src/modules/auth/routes';
 import { createAuthService } from '../../../src/modules/auth/service';
 import { LIMITS, createAuthThrottle, type AuthThrottle } from '../../../src/modules/auth/throttle';
+import { closeServers, listen } from '../../support/server';
 import { FakeRepository, fakeHasher } from './fakes';
 
 const ALICE = { email: 'alice@example.com', password: 'correct horse battery staple' };
 
-/*
- * One real server per test, listening before the first request. Handing
- * supertest the bare Express app makes it open and close a server on a fresh
- * ephemeral port for every request, and under a quick burst of requests a
- * recycled port occasionally answered with something that is not HTTP
- * ("Parse Error: Expected HTTP/").
- */
-const servers: http.Server[] = [];
-
-afterEach(async () => {
-    await Promise.all(servers.splice(0).map(server => new Promise(resolve => server.close(resolve))));
-});
+afterEach(closeServers);
 
 async function app({
     secureCookies = false,
@@ -37,10 +27,7 @@ async function app({
     app.use(express.json());
     app.use('/auth', createAuthRouter(withService ? service : undefined, { secureCookies, throttle }));
 
-    const server = http.createServer(app);
-    servers.push(server);
-    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-    return server;
+    return listen(app);
 }
 
 function sessionCookie(res: request.Response): string {

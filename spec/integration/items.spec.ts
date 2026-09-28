@@ -1,13 +1,15 @@
 import { readFileSync } from 'node:fs';
+import type { Server } from 'node:http';
 import path from 'node:path';
 import type { Connection, RowDataPacket } from 'mysql2/promise';
 import request from 'supertest';
 import * as outbox from '../../src/infrastructure/outbox/outboxRepository.drizzle';
 import { init, teardown } from '../../src/infrastructure/db/drizzle';
+import { closeServers, listen } from '../support/server';
 import { createApp } from './support/app';
 import { connect, dropTables } from './support/database';
 
-const app = createApp();
+let app: Server;
 let connection: Connection;
 const tables = ['todo_items', 'sessions', 'users', 'outbox_events', 'notifications', 'processed_events'];
 const fields = { name: 'My task', completed: false, deadline: '2026-10-01', priorisation: 'high' };
@@ -34,9 +36,11 @@ beforeAll(async () => {
     await connection.query("INSERT INTO todo_items (id, name, completed) VALUES ('duplicate', 'First', 0), ('duplicate', 'Second', 1), (NULL, NULL, NULL)");
     await migrate('0002_task_ownership.sql');
     await init();
+    app = await listen(createApp());
 });
 
 afterAll(async () => {
+    await closeServers();
     await teardown();
     if (connection) {
         await dropTables(connection, tables);
