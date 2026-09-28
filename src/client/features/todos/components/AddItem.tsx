@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Alert, Box, Button, MenuItem, Modal, TextField, Typography } from '@mui/material';
 import { itemsApi } from '../api/itemsApi';
+import { projectsApi } from '../api/projectApi';
 import { errorMessage } from '../../../lib/http';
 import type { Priority } from '../../../../types';
 
@@ -15,27 +16,89 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
   const [deadline, setDeadline] = useState<string>('');
   const [priorisation, setPriorisation] = useState<Priority>('medium');
 
+  const [projectId, setProjectId] = useState<string>('');
+  const [projects, setProjects] = useState<
+    { id: string; name: string }[]
+  >([]);
+
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const controller = new AbortController();
+
+    const getProjects = async () => {
+      setLoadingProjects(true);
+      setError('');
+
+      try {
+        const res = await projectsApi.getAll(controller.signal);
+
+        setProjects(res);
+
+        if (res.length > 0) {
+          setProjectId(res[0].id);
+        } else {
+          setProjectId('');
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted) {
+          setError(errorMessage(cause));
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoadingProjects(false);
+        }
+      }
+    };
+
+    getProjects();
+
+    return () => {
+      controller.abort();
+    };
+  }, [open]);
 
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
   ) => {
     event.preventDefault();
 
+    if (!projectId) {
+      setError('Veuillez ajouter un projet.');
+      return;
+    }
+
     setBusy(true);
     setError('');
+
     try {
-      await itemsApi.create({ completed: false, name, deadline, priorisation });
+      await itemsApi.create({
+        completed: false,
+        name,
+        deadline,
+        priorisation,
+        projectId,
+      });
+
       setName('');
       setDeadline('');
       setPriorisation('medium');
+      setProjectId('');
+
       onCreated();
       handleClose();
     } catch (cause) {
       setError(errorMessage(cause));
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const noProjects = !loadingProjects && projects.length === 0;
 
   return (
     <Modal
@@ -69,7 +132,42 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
           Ajouter une tâche
         </Typography>
 
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && (
+          <Alert severity="error">
+            {error}
+          </Alert>
+        )}
+
+        {loadingProjects ? (
+          <TextField
+            label="Projet"
+            value="Chargement..."
+            fullWidth
+            disabled
+          />
+        ) : noProjects ? (
+          <Alert severity="info">
+            Aucun projet n'existe encore. Veuillez d'abord créer
+            un projet avant d'ajouter une tâche.
+          </Alert>
+        ) : (
+          <TextField
+            name="projectId"
+            label="Projet"
+            select
+            required
+            fullWidth
+            value={projectId}
+            onChange={(event) => setProjectId(event.target.value)}
+          >
+            {projects.map((project) => (
+              <MenuItem key={project.id} value={project.id}>
+                {project.name}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+
         <TextField
           name="name"
           label="Nom"
@@ -88,9 +186,7 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
           required
           fullWidth
           value={deadline}
-          onChange={(event) =>
-            setDeadline(event.target.value)
-          }
+          onChange={(event) => setDeadline(event.target.value)}
           slotProps={{
             inputLabel: {
               shrink: true,
@@ -109,17 +205,9 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
           required
           fullWidth
         >
-          <MenuItem value="high">
-            High
-          </MenuItem>
-
-          <MenuItem value="medium">
-            Medium
-          </MenuItem>
-
-          <MenuItem value="low">
-            Low
-          </MenuItem>
+          <MenuItem value="high">High</MenuItem>
+          <MenuItem value="medium">Medium</MenuItem>
+          <MenuItem value="low">Low</MenuItem>
         </TextField>
 
         <Box
@@ -140,7 +228,7 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
           </Button>
 
           <Button
-            disabled={busy}
+            disabled={busy || loadingProjects || noProjects}
             type="submit"
             variant="contained"
           >
@@ -152,3 +240,56 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
   );
 }
 
+// ### Important : ton `itemsApi.create`
+
+// Il faut maintenant que le type de création accepte `projectId` :
+
+// ```ts
+// export type ItemInput = {
+//   name: string;
+//   completed: boolean;
+//   deadline: string;
+//   priorisation: Priority;
+//   projectId: string;
+// };
+// ```
+
+// Et ton appel :
+
+// ```ts
+// create: (item: ItemInput) =>
+//   request<TodoItem>('/items', {
+//     method: 'POST',
+//     body: JSON.stringify(item),
+//   }),
+// ```
+
+// Le JSON envoyé au backend sera donc :
+
+// ```json
+// {
+//   "name": "Ma tâche",
+//   "completed": false,
+//   "deadline": "2026-10-01",
+//   "priorisation": "medium",
+//   "projectId": "3147d0d2-a8d3-4337-843f-7f76d6ae9f40"
+// }
+// ```
+
+// ### Côté backend
+
+// Ton endpoint `/items` devra récupérer `projectId` :
+
+// ```ts
+// const {
+//   name,
+//   completed,
+//   deadline,
+//   priorisation,
+//   projectId,
+// } = req.body;
+// ```
+
+// puis le repository devra l'insérer dans `todo_items.project_id`.
+
+// **Petit détail :** dans le code ci-dessus, lorsqu'il y a des projets, le premier est sélectionné automatiquement. Si tu préfères afficher `Sélectionner un projet...` par défaut et obliger l'utilisateur à choisir, je peux te faire cette variante.

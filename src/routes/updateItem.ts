@@ -18,6 +18,7 @@ export = async (req: Request<{ id: string }>, res: Response) => {
             completed: req.body.completed,
             deadline: req.body.deadline,
             priorisation: req.body.priorisation,
+            projectId: req.body.projectId,
         });
         const item = await db.getItem(req.params.id);
         res.send(item);

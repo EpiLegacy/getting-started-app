@@ -9,15 +9,10 @@ import type { ProjectInput, ProjectRepository } from './types';
 
 export function projectRepository(): ProjectRepository {
   return {
-    async list(): Promise<Project[]> {
-      const rows = await getDb().query.projects.findMany({
-        with: {
-          user: true,
-          items: true,
-        },
-      });
-    
-      return rows;
+    async list() {
+      return await getDb()
+        .select()
+        .from(projects);
     },
 
     async getById(
@@ -34,18 +29,11 @@ export function projectRepository(): ProjectRepository {
       if (!project) {
         return undefined;
       }
-      return {
-        id: project.id,
-        name: project.name,
-        user: {
-          userid: project.userId ?? '',
-          email: '',
-        },
-        items: [],
-      };
+      return project;
     },
 
     async create(
+      userId: string,
       input: ProjectInput,
     ): Promise<Project> {
       const id = randomUUID();
@@ -55,8 +43,7 @@ export function projectRepository(): ProjectRepository {
         .values({
           id,
           name: input.name,
-          // userId,
-          itemsTodoId: [],
+          userId,
           createdAt: new Date(),
         });
 

@@ -15,6 +15,7 @@ function toTask(row: typeof todoItems.$inferSelect): Task {
         completed: row.completed === true,
         deadline: row.deadline ?? '',
         priorisation: row.priorisation ?? 'medium',
+        projectId: row.projectId ?? '',
     };
 }
 

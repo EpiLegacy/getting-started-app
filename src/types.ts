@@ -6,17 +6,14 @@ export interface Item {
     completed: boolean;
     deadline: string;
     priorisation: Priority;
+    projectId: string;
 }
-
-export interface Project {
+export type Project = {
   id: string;
   name: string;
-  user: {
-    userid: string,
-    email: string,
-  }
-  items: Item[],
-}
+  userId: string | null;
+  createdAt: Date;
+};
 
 export interface StoredItem {
     id: string;

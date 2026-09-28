@@ -7,35 +7,30 @@ import { Priority } from '../../types';
  * A project belongs to one user and contains multiple todo items.
  */
 export const projects = mysqlTable(
-    'projects',
-    {
-      id: char('id', { length: 36 })
-        .notNull()
-        .primaryKey(),
-  
-      name: varchar('name', {
-        length: 255,
-      }).notNull(),
-  
-      userId: char('user_id', {
-        length: 36,
-      }).references(() => users.id, {
-        onDelete: 'set null',
-      }),
-  
-      itemsTodoId: json('items_todo_id')
-        .$type<string[]>()
-        .notNull()
-        .default([]),
-  
-      createdAt: datetime('created_at', {
-        fsp: 3,
-      }).notNull(),
-    },
-    table => [
-      index('idx_projects_user').on(table.userId),
-    ],
-  );
+  'projects',
+  {
+    id: char('id', { length: 36 })
+      .notNull()
+      .primaryKey(),
+
+    name: varchar('name', {
+      length: 255,
+    }).notNull(),
+
+    userId: char('user_id', {
+      length: 36,
+    }).references(() => users.id, {
+      onDelete: 'set null',
+    }),
+
+    createdAt: datetime('created_at', {
+      fsp: 3,
+    }).notNull(),
+  },
+  table => [
+    index('idx_projects_user').on(table.userId),
+  ],
+);
 
 /**
  * Legacy fields remain nullable and unchanged.
@@ -45,15 +40,56 @@ export const projects = mysqlTable(
  *
  * userId = NULL means an existing task is available to claim.
  */
-export const todoItems = mysqlTable('todo_items', {
-    taskKey: int('task_key', { unsigned: true }).autoincrement().primaryKey(),
-    userId: char('user_id', { length: 36 }).references(() => users.id, { onDelete: 'restrict' }),
-    id: varchar('id', { length: 36 }),
-    name: varchar('name', { length: 255 }),
+export const todoItems = mysqlTable(
+  'todo_items',
+  {
+    taskKey: int('task_key', {
+      unsigned: true,
+    })
+      .autoincrement()
+      .primaryKey(),
+
+    id: varchar('id', {
+      length: 36,
+    }),
+
+    userId: char('user_id', {
+      length: 36,
+    }).references(() => users.id, {
+      onDelete: 'restrict',
+    }),
+
+    projectId: char('project_id', {
+      length: 36,
+    }).references(() => projects.id, {
+      onDelete: 'cascade',
+    }),
+
+    name: varchar('name', {
+      length: 255,
+    }),
+
     completed: boolean('completed'),
-    deadline: varchar('deadline', { length: 255 }),
-    priorisation: varchar('priorisation', { length: 255 }).$type<Priority>(),
-}, table => [index('idx_todo_items_user').on(table.userId, table.taskKey)]);
+
+    deadline: varchar('deadline', {
+      length: 255,
+    }),
+
+    priorisation: varchar('priorisation', {
+      length: 255,
+    }).$type<Priority>(),
+  },
+  table => [
+    index('idx_todo_items_user').on(
+      table.userId,
+      table.taskKey,
+    ),
+
+    index('idx_todo_items_project').on(
+      table.projectId,
+    ),
+  ],
+);
 
 export const outboxEvents = mysqlTable(
     'outbox_events',

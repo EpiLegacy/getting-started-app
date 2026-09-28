@@ -8,11 +8,12 @@ export interface ProjectRepository {
   ): Promise<Project | undefined>;
 
   create(
+    userId: string,
     input: ProjectInput,
   ): Promise<Project>;
-  
+
   list(): Promise<Project[]>;
-  
+
   update(
     id: string,
     userId: string,

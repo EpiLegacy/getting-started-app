@@ -2,6 +2,7 @@ import { Router } from 'express';
 
 import type { AuthService } from '../auth/service';
 import type { ProjectRepository } from './types';
+import { currentUser, requireAuth } from '../auth/routes';
 
 export function createProjectRouter(
   authService: AuthService | undefined,
@@ -14,6 +15,8 @@ export function createProjectRouter(
     });
     return router;
   }
+  router.use(requireAuth(authService));
+
   
   router.get('/', async (_req, res) => {
     res.json(await projectRepository.list());
@@ -21,11 +24,15 @@ export function createProjectRouter(
 
   router.post('/', async (req, res) => {
     const { name } = req.body;
+    const userId = currentUser(res).id;
+  
     const project = await projectRepository.create(
+      userId,
       {
         name: name.trim(),
       },
     );
+  
     return res.status(201).json(project);
   });
 

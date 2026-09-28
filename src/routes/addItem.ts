@@ -10,6 +10,7 @@ export = async (req: Request, res: Response) => {
         completed: false,
         deadline: req.body.deadline,
         priorisation: req.body.priorisation,
+        projectId: req.body.projectId,
     };
 
     await db.storeItem(item);
