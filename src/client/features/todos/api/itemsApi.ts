@@ -15,4 +15,12 @@ export const itemsApi = {
   }),
   remove: (id: string) => request<void>(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   claim: (id: string) => request<void>(`/items/${encodeURIComponent(id)}/claim`, { method: 'POST' }),
+  updateStatus: (
+    id: string,
+    status: 'todo' | 'in_progress' | 'done'
+  ) =>
+    request<Item>(`/items/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
 };

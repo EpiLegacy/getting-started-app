@@ -6,6 +6,7 @@ import { enqueue } from '../../infrastructure/outbox/outboxRepository.drizzle';
 import { createEvent } from '../../shared/events/envelope';
 import { TASK_COMPLETED, eventCatalog } from '../../shared/events/catalog';
 import type { Task, TaskRepository } from './types';
+import { TaskStatus } from '../../types';
 
 function toTask(row: typeof todoItems.$inferSelect): Task {
     return {
@@ -13,6 +14,7 @@ function toTask(row: typeof todoItems.$inferSelect): Task {
         userId: row.userId,
         name: row.name ?? '',
         completed: row.completed === true,
+        status: row.status,
         deadline: row.deadline ?? '',
         priorisation: row.priorisation ?? 'medium',
         projectId: row.projectId ?? '',
@@ -66,4 +68,59 @@ export const taskRepository: TaskRepository = {
         const [result] = await getDb().delete(todoItems).where(owned(id, userId));
         return result.affectedRows === 1;
     },
+    getById: async (
+        id: number,
+        userId: string,
+    ): Promise<Task | undefined> => {
+        const rows = await getDb()
+            .select()
+            .from(todoItems)
+            .where(
+                and(
+                    eq(todoItems.taskKey, id),
+                    eq(todoItems.userId, userId),
+                ),
+            )
+            .limit(1);
+
+        const task = rows[0];
+
+        if (!task) {
+            return undefined;
+        }
+        return {
+            id: task.id,
+            userId: task.userId,
+            projectId: task.projectId ?? '',
+            name: task.name ?? '',
+            completed: task.completed ?? false,
+            status: task.status,
+            deadline: task.deadline ?? '',
+            priorisation: task.priorisation ?? 'medium',
+        };
+
+    },
+    async updateStatus(
+        id: number,
+        userId: string,
+        status: TaskStatus,
+    ): Promise<Task | undefined> {
+        const result = await getDb()
+            .update(todoItems)
+            .set({
+                status,
+            })
+            .where(
+                and(
+                    eq(todoItems.taskKey, id),
+                    eq(todoItems.userId, userId),
+                ),
+            );
+
+        if (result[0].affectedRows === 0) {
+            return undefined;
+        }
+
+        return this.getById(id, userId);
+    }
 };

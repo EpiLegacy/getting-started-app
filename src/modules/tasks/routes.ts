@@ -8,6 +8,7 @@ import type { TaskRepository } from './types';
 const taskInput = z.object({
     name: z.string().trim().min(1).max(255),
     completed: z.boolean(),
+    status: z.enum(['todo', 'in_progress', 'done']),
     deadline: z.union([z.literal(''), z.iso.date()]),
     priorisation: z.enum(['high', 'medium', 'low']),
     projectId: z.string().uuid(),
@@ -81,6 +82,25 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
             return;
         }
         res.status(204).end();
+    });
+    router.patch('/:id/status', async (req, res) => {
+        const userId = currentUser(res).id;
+        const id = Number(req.params.id);
+        const { status } = req.body;
+
+        const task = await repository.updateStatus(
+            id,
+            userId,
+            status,
+        );
+
+        if (!task) {
+            return res.status(404).json({
+                error: 'task_not_found',
+            });
+        }
+
+        return res.json(task);
     });
     return router;
 }

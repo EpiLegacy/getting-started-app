@@ -1,4 +1,4 @@
-import type { Item } from '../../types';
+import type { Item, TaskStatus } from '../../types';
 
 /** Public id is the stable task_key, not the non-unique legacy id column. */
 export interface Task extends Item {
@@ -14,4 +14,6 @@ export interface TaskRepository {
     claim(id: number, userId: string): Promise<boolean>;
     update(id: number, userId: string, input: Partial<TaskInput>, correlationId: string): Promise<Task | undefined>;
     remove(id: number, userId: string): Promise<boolean>;
+    getById(id: number, userId: string): Promise<Task | undefined>;
+    updateStatus(id: number,userId: string,status: TaskStatus): Promise<Task | undefined>;
 }

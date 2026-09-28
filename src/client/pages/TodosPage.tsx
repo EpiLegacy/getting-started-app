@@ -1,22 +1,18 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import {
   Alert,
-  CircularProgress,
   Box,
   Button,
+  Card,
+  CardContent,
   Checkbox,
+  Chip,
+  CircularProgress,
   IconButton,
   InputAdornment,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TablePagination,
-  TableRow,
-  TableSortLabel,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material';
@@ -37,13 +33,35 @@ import { projectsApi } from '../features/todos/api/projectApi';
 import { useTasks } from '../features/todos/useTasks';
 
 import { errorMessage } from '../lib/http';
-
-type SortKey = 'deadline' | 'priorisation';
+import { TaskStatus } from '../../types';
 
 type Project = {
   id: string;
   name: string;
 };
+
+type DraggedTask = {
+  id: string;
+  status: TaskStatus;
+};
+
+const columns: {
+  id: TaskStatus;
+  title: string;
+}[] = [
+  {
+    id: 'todo',
+    title: 'Todo',
+  },
+  {
+    id: 'in_progress',
+    title: 'In progress',
+  },
+  {
+    id: 'done',
+    title: 'Done',
+  },
+];
 
 export default function TodosPage() {
   const {
@@ -56,19 +74,10 @@ export default function TodosPage() {
     mutate,
   } = useTasks();
 
-  const [open, setOpen] = useState<boolean>(false);
-  const [openProject, setOpenProject] = useState<boolean>(false);
+  const [open, setOpen] = useState(false);
+  const [openProject, setOpenProject] = useState(false);
 
   const [search, setSearch] = useState('');
-
-  const [sortKey, setSortKey] =
-    useState<SortKey>('deadline');
-
-  const [sortDirection, setSortDirection] =
-    useState<'asc' | 'desc'>('asc');
-
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsLoading, setProjectsLoading] =
@@ -76,15 +85,30 @@ export default function TodosPage() {
 
   const [projectsError, setProjectsError] = useState('');
 
-  const handleOpen = () => setOpen(true);
-  const handleClose = () => setOpen(false);
+  const [draggedTask, setDraggedTask] =
+    useState<DraggedTask | null>(null);
 
-  const handleOpenProject = () => setOpenProject(true);
-  const handleCloseProject = () => setOpenProject(false);
+  const [dragOverColumn, setDragOverColumn] =
+    useState<TaskStatus | null>(null);
+
+  const handleOpen = () => {
+    setOpen(true);
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+  };
+
+  const handleOpenProject = () => {
+    setOpenProject(true);
+  };
+
+  const handleCloseProject = () => {
+    setOpenProject(false);
+  };
 
   /**
-   * Charge les projets afin de pouvoir afficher
-   * leur nom dans le tableau.
+   * Charge les projets.
    */
   const loadProjects = async () => {
     const controller = new AbortController();
@@ -114,124 +138,201 @@ export default function TodosPage() {
   }, []);
 
   /**
-   * Retourne le nom du projet correspondant au projectId
-   * de la tâche.
+   * Permet de retrouver le nom du projet
+   * à partir du projectId de la tâche.
    */
   const getProjectName = (
     projectId: string | null | undefined
   ) => {
     if (!projectId) {
-      return '—';
+      return 'No project';
     }
 
     const project = projects.find(
       (project) => project.id === projectId
     );
 
-    return project?.name ?? 'Projet inconnu';
+    return project?.name ?? 'Unknown project';
   };
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDirection((prev) =>
-        prev === 'asc' ? 'desc' : 'asc'
+  /**
+   * Recherche.
+   */
+  const filteredItems = useMemo(() => {
+    const normalizedSearch =
+      search.trim().toLowerCase();
+
+    if (!normalizedSearch) {
+      return items;
+    }
+
+    return items.filter((item) => {
+      const taskName =
+        item.name?.toLowerCase() ?? '';
+
+      const projectName =
+        getProjectName(item.projectId).toLowerCase();
+
+      return (
+        taskName.includes(normalizedSearch) ||
+        projectName.includes(normalizedSearch)
       );
-    } else {
-      setSortKey(key);
-      setSortDirection('asc');
-    }
+    });
+  }, [items, search, projects]);
 
-    setPage(0);
-  };
+  /**
+   * Regroupe les tâches par colonne.
+   */
+  const tasksByStatus = useMemo(() => {
+    const result: Record<
+      TaskStatus,
+      typeof filteredItems
+    > = {
+      todo: [],
+      in_progress: [],
+      done: [],
+    };
 
-  const priorityOrder = {
-    high: 1,
-    medium: 2,
-    low: 3,
-  };
+    filteredItems.forEach((item) => {
+      const status =
+        (item.status as TaskStatus) ?? 'todo';
 
-  const filteredItems = items.filter((item) =>
-    item.name
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
-
-  const sortedItems = [...filteredItems].sort(
-    (a, b) => {
-      let comparison = 0;
-
-      if (sortKey === 'deadline') {
-        comparison =
-          new Date(a.deadline).getTime() -
-          new Date(b.deadline).getTime();
+      if (status in result) {
+        result[status].push(item);
+      } else {
+        result.todo.push(item);
       }
+    });
 
-      if (sortKey === 'priorisation') {
-        comparison =
-          priorityOrder[a.priorisation] -
-          priorityOrder[b.priorisation];
-      }
+    return result;
+  }, [filteredItems]);
 
-      return sortDirection === 'asc'
-        ? comparison
-        : -comparison;
+  /**
+   * Drag & Drop
+   */
+  const handleDragStart = (
+    event: React.DragEvent,
+    task: {
+      id: string;
+      status?: TaskStatus;
     }
-  );
-
-  const currentPage = Math.min(
-    page,
-    Math.max(
-      0,
-      Math.ceil(
-        sortedItems.length / rowsPerPage
-      ) - 1
-    )
-  );
-
-  const paginatedItems = sortedItems.slice(
-    currentPage * rowsPerPage,
-    currentPage * rowsPerPage + rowsPerPage
-  );
-
-  const handleChangePage = (
-    _event: unknown,
-    newPage: number
   ) => {
-    setPage(newPage);
-  };
+    const data: DraggedTask = {
+      id: task.id,
+      status: task.status ?? 'todo',
+    };
 
-  const handleChangeRowsPerPage = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    setRowsPerPage(
-      parseInt(event.target.value, 10)
+    setDraggedTask(data);
+
+    event.dataTransfer.effectAllowed = 'move';
+
+    event.dataTransfer.setData(
+      'text/plain',
+      task.id
     );
-    setPage(0);
   };
 
+  const handleDragOver = (
+    event: React.DragEvent,
+    status: TaskStatus
+  ) => {
+    event.preventDefault();
+
+    event.dataTransfer.dropEffect = 'move';
+
+    setDragOverColumn(status);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = async (
+    event: React.DragEvent,
+    targetStatus: TaskStatus
+  ) => {
+    event.preventDefault();
+
+    setDragOverColumn(null);
+
+    if (!draggedTask) {
+      return;
+    }
+
+    if (draggedTask.status === targetStatus) {
+      setDraggedTask(null);
+      return;
+    }
+
+    try {
+      await mutate(() =>
+        itemsApi.updateStatus(
+          draggedTask.id,
+          targetStatus
+        )
+      );
+    } catch (cause) {
+      console.error(
+        'Unable to update task status',
+        cause
+      );
+    } finally {
+      setDraggedTask(null);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedTask(null);
+    setDragOverColumn(null);
+  };
+
+  /**
+   * Supprime une tâche.
+   */
   const handleDeleteItem = (id: string) => {
-    void mutate(() => itemsApi.remove(id));
+    void mutate(() =>
+      itemsApi.remove(id)
+    );
   };
 
-  const handleCheckboxChange = (id: string) => {
+  /**
+   * Change le statut via la checkbox.
+   */
+  const handleCheckboxChange = (
+    id: string
+  ) => {
     const item = items.find(
       (item) => item.id === id
     );
 
-    if (item) {
-      void mutate(() =>
-        itemsApi.setCompleted(
-          item.id,
-          !item.completed
-        )
-      );
+    if (!item) {
+      return;
     }
+
+    const newCompleted = !item.completed;
+
+    const newStatus: TaskStatus =
+      newCompleted
+        ? 'done'
+        : 'todo';
+
+    void mutate(async () => {
+      await itemsApi.setCompleted(
+        item.id,
+        newCompleted
+      );
+
+      await itemsApi.updateStatus(
+        item.id,
+        newStatus
+      );
+    });
   };
 
   /**
-   * Après création d'un projet, on recharge également
-   * les projets pour que le nouveau nom soit disponible
-   * immédiatement dans le tableau.
+   * Après création d'un projet :
+   * - refresh des tâches
+   * - refresh des projets
    */
   const handleProjectCreated = () => {
     void refresh();
@@ -242,27 +343,91 @@ export default function TodosPage() {
     <Box
       sx={{
         minHeight: '100vh',
-        display: 'flex',
-        justifyContent: 'center',
+        width: '100%',
         p: 3,
+        boxSizing: 'border-box',
       }}
     >
       <Box
         sx={{
           width: '100%',
-          maxWidth: 1000,
+          maxWidth: 1600,
+          mx: 'auto',
         }}
       >
-        <Typography
-          variant="h5"
+        {/* Header */}
+        <Box
           sx={{
-            mb: 2,
-            textAlign: 'center',
+            display: 'flex',
+            alignItems: {
+              xs: 'stretch',
+              md: 'center',
+            },
+            justifyContent: 'space-between',
+            gap: 2,
+            mb: 3,
+            flexDirection: {
+              xs: 'column',
+              md: 'row',
+            },
           }}
         >
-          My tasks
-        </Typography>
+          <Box>
+            <Typography
+              variant="h5"
+              fontWeight={700}
+            >
+              My tasks
+            </Typography>
 
+            <Typography
+              variant="body2"
+              color="text.secondary"
+            >
+              Organize your work
+              visually.
+            </Typography>
+          </Box>
+
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Button
+              onClick={handleOpen}
+              variant="contained"
+              startIcon={<AddIcon />}
+            >
+              Add item
+            </Button>
+
+            <Button
+              onClick={handleOpenProject}
+              variant="outlined"
+              startIcon={<AddIcon />}
+            >
+              Add project
+            </Button>
+          </Box>
+        </Box>
+
+        {/* Modals */}
+        <AddProject
+          open={openProject}
+          handleClose={handleCloseProject}
+          onCreated={handleProjectCreated}
+        />
+
+        <AddItem
+          open={open}
+          handleClose={handleClose}
+          onCreated={refresh}
+        />
+
+        {/* Errors */}
         {error && (
           <Alert
             severity="error"
@@ -287,28 +452,28 @@ export default function TodosPage() {
           </Alert>
         )}
 
-        {(loading || projectsLoading) && (
-          <CircularProgress
-            aria-label="Loading"
-            size={24}
-          />
-        )}
-
+        {/* Search */}
         <Box
           sx={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            mb: 2,
+            gap: 2,
+            mb: 3,
           }}
         >
           <TextField
-            label="Name"
+            label="Search tasks"
             variant="outlined"
             value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(0);
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+            size="small"
+            sx={{
+              width: {
+                xs: '100%',
+                sm: 350,
+              },
             }}
             slotProps={{
               input: {
@@ -321,243 +486,290 @@ export default function TodosPage() {
             }}
           />
 
-          <Box
-            sx={{
-              display: 'flex',
-              gap: 2,
-            }}
-          >
-            <Button
-              onClick={handleOpen}
-              variant="contained"
-            >
-              <AddIcon />
-              Add item
-            </Button>
-
-            <Button
-              onClick={handleOpenProject}
-              variant="contained"
-            >
-              <AddIcon />
-              Add project
-            </Button>
-          </Box>
+          {(loading ||
+            projectsLoading) && (
+            <CircularProgress
+              size={24}
+              aria-label="Loading"
+            />
+          )}
         </Box>
 
-        <AddProject
-          open={openProject}
-          handleClose={handleCloseProject}
-          onCreated={handleProjectCreated}
-        />
+        {/* Kanban */}
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            width: '100%',
+            overflowX: 'auto',
+            pb: 2,
+          }}
+        >
+          {columns.map((column) => {
+            const columnTasks =
+              tasksByStatus[column.id];
 
-        <AddItem
-          open={open}
-          handleClose={handleClose}
-          onCreated={refresh}
-        />
+            const isDragOver =
+              dragOverColumn === column.id;
 
-        {!loading &&
-          filteredItems.length === 0 && (
-            <Typography sx={{ my: 2 }}>
-              {items.length
-                ? 'No matching tasks.'
-                : 'No tasks yet. Add one or claim an unassigned task below.'}
-            </Typography>
-          )}
-
-        <TableContainer component={Paper}>
-          <Table sx={{ minWidth: 650 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>
-                  Name
-                </TableCell>
-
-                <TableCell
-                  sortDirection={
-                    sortKey === 'deadline'
-                      ? sortDirection
-                      : false
-                  }
+            return (
+              <Paper
+                key={column.id}
+                elevation={0}
+                onDragOver={(event) =>
+                  handleDragOver(
+                    event,
+                    column.id
+                  )
+                }
+                onDragLeave={
+                  handleDragLeave
+                }
+                onDrop={(event) =>
+                  void handleDrop(
+                    event,
+                    column.id
+                  )
+                }
+                sx={{
+                  flex: '1 1 0',
+                  minWidth: 320,
+                  maxWidth: 520,
+                  minHeight: 550,
+                  p: 1.5,
+                  borderRadius: 2,
+                  border: '1px solid',
+                  borderColor: isDragOver
+                    ? 'primary.main'
+                    : 'divider',
+                  backgroundColor:
+                    isDragOver
+                      ? 'action.hover'
+                      : 'background.default',
+                  transition:
+                    'border-color 0.15s, background-color 0.15s',
+                }}
+              >
+                {/* Column header */}
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent:
+                      'space-between',
+                    mb: 1.5,
+                    px: 0.5,
+                  }}
                 >
-                  <TableSortLabel
-                    active={
-                      sortKey === 'deadline'
-                    }
-                    direction={
-                      sortKey === 'deadline'
-                        ? sortDirection
-                        : 'asc'
-                    }
-                    onClick={() =>
-                      handleSort('deadline')
-                    }
+                  <Typography
+                    variant="subtitle1"
+                    fontWeight={700}
                   >
-                    Deadline
-                  </TableSortLabel>
-                </TableCell>
+                    {column.title}
+                  </Typography>
 
-                <TableCell
-                  sortDirection={
-                    sortKey === 'priorisation'
-                      ? sortDirection
-                      : false
-                  }
-                >
-                  <TableSortLabel
-                    active={
-                      sortKey === 'priorisation'
-                    }
-                    direction={
-                      sortKey === 'priorisation'
-                        ? sortDirection
-                        : 'asc'
-                    }
-                    onClick={() =>
-                      handleSort(
-                        'priorisation'
-                      )
-                    }
-                  >
-                    Priorisation
-                  </TableSortLabel>
-                </TableCell>
+                  <Chip
+                    size="small"
+                    label={columnTasks.length}
+                  />
+                </Box>
 
-                <TableCell>
-                  Project name
-                </TableCell>
+                {/* Cards */}
+                <Stack spacing={1.5}>
+                  {columnTasks.map(
+                    (row) => (
+                      <Card
+                        key={row.id}
+                        draggable
+                        onDragStart={(event) =>
+                          handleDragStart(
+                            event,
+                            {
+                              id: row.id,
+                              status:
+                                (row.status as TaskStatus) ??
+                                'todo',
+                            }
+                          )
+                        }
+                        onDragEnd={
+                          handleDragEnd
+                        }
+                        sx={{
+                          cursor: 'grab',
+                          border:
+                            '1px solid',
+                          borderColor:
+                            'divider',
+                          borderRadius: 2,
+                          transition:
+                            'box-shadow 0.15s, transform 0.15s',
+                          '&:hover': {
+                            boxShadow: 3,
+                          },
+                          '&:active': {
+                            cursor: 'grabbing',
+                          },
+                          opacity:
+                            draggedTask?.id ===
+                            row.id
+                              ? 0.5
+                              : 1,
+                        }}
+                      >
+                        <CardContent
+                          sx={{
+                            '&:last-child': {
+                              pb: 2,
+                            },
+                          }}
+                        >
+                          {/* Task name + delete */}
+                          <Box
+                            sx={{
+                              display:
+                                'flex',
+                              alignItems:
+                                'flex-start',
+                              justifyContent:
+                                'space-between',
+                              gap: 1,
+                            }}
+                          >
+                            <Typography
+                              variant="subtitle2"
+                              fontWeight={600}
+                              sx={{
+                                wordBreak:
+                                  'break-word',
+                              }}
+                            >
+                              {row.name ||
+                                'Untitled task'}
+                            </Typography>
 
-                <TableCell>
-                  Completed
-                </TableCell>
+                            <IconButton
+                              size="small"
+                              disabled={
+                                loading ||
+                                pending
+                              }
+                              aria-label={`Delete ${row.name}`}
+                              onClick={() =>
+                                handleDeleteItem(
+                                  row.id
+                                )
+                              }
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
 
-                <TableCell>
-                  Action
-                </TableCell>
-              </TableRow>
-            </TableHead>
+                          {/* Project */}
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                            sx={{
+                              mt: 1,
+                              mb: 1,
+                            }}
+                          >
+                            {getProjectName(
+                              row.projectId
+                            )}
+                          </Typography>
 
-            <TableBody>
-              {paginatedItems.map((row) => (
-                <TableRow
-                  key={row.id}
-                  className={
-                    row.completed
-                      ? 'todo-row completed'
-                      : 'todo-row'
-                  }
-                >
-                  <TableCell>
-                    {row.name ||
-                      'Untitled task'}
-                  </TableCell>
+                          {/* Metadata */}
+                          <Box
+                            sx={{
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap: 1,
+                              flexWrap:
+                                'wrap',
+                            }}
+                          >
+                            <Chip
+                              size="medium"
+                              label={
+                                row.priorisation
+                              }
+                              color={
+                                row.priorisation === 'high' ? 'error' : 
+                                row.priorisation === 'medium' ? 'warning' :
+                                'success'
+                              }
+                            />
 
-                  <TableCell>
-                    {row.deadline
-                      ? new Date(
-                          row.deadline
-                        ).toLocaleDateString(
-                          'fr-FR'
-                        )
-                      : '—'}
-                  </TableCell>
+                            <Chip
+                              size="medium"
+                              variant="outlined"
+                              label={
+                                row.deadline
+                                  ? new Date(
+                                      row.deadline
+                                    ).toLocaleDateString(
+                                      'fr-FR'
+                                    )
+                                  : 'No deadline'
+                              }
+                            />
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    )
+                  )}
 
-                  <TableCell>
-                    {row.priorisation}
-                  </TableCell>
-
-                  <TableCell>
-                    <Typography
-                      variant="body2"
-                      fontWeight={500}
-                    >
-                      {getProjectName(
-                        row.projectId
-                      )}
-                    </Typography>
-                  </TableCell>
-
-                  <TableCell>
-                    <Checkbox
-                      disabled={
-                        loading || pending
-                      }
-                      slotProps={{
-                        input: {
-                          'aria-label': `Mark ${
-                            row.name
-                          } ${
-                            row.completed
-                              ? 'incomplete'
-                              : 'complete'
-                          }`,
-                        },
+                  {/* Empty column */}
+                  {columnTasks.length ===
+                    0 && (
+                    <Box
+                      sx={{
+                        minHeight: 120,
+                        border: '1px dashed',
+                        borderColor:
+                          isDragOver
+                            ? 'primary.main'
+                            : 'divider',
+                        borderRadius: 2,
+                        display: 'flex',
+                        alignItems:
+                          'center',
+                        justifyContent:
+                          'center',
+                        p: 2,
                       }}
-                      checked={row.completed}
-                      onChange={() =>
-                        handleCheckboxChange(
-                          row.id
-                        )
-                      }
-                    />
-                  </TableCell>
-
-                  <TableCell>
-                    <IconButton
-                      disabled={
-                        loading || pending
-                      }
-                      aria-label={`Delete ${row.name}`}
-                      onClick={() => {
-                        handleDeleteItem(
-                          row.id
-                        );
-                      }}
                     >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        textAlign="center"
+                      >
+                        Drop a task here
+                      </Typography>
+                    </Box>
+                  )}
+                </Stack>
+              </Paper>
+            );
+          })}
+        </Box>
 
-          <TablePagination
-            component="div"
-            count={filteredItems.length}
-            page={currentPage}
-            onPageChange={handleChangePage}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={
-              handleChangeRowsPerPage
-            }
-            rowsPerPageOptions={[
-              5,
-              10,
-              25,
-            ]}
-            labelRowsPerPage="Lignes par page"
-            labelDisplayedRows={({
-              from,
-              to,
-              count,
-            }) =>
-              `${from}-${to} sur ${count}`
-            }
-          />
-        </TableContainer>
-
+        {/* Unassigned tasks */}
         {!loading && (
-          <UnassignedTasks
-            tasks={unassigned}
-            disabled={pending}
-            onClaim={(id) => {
-              void mutate(() =>
-                itemsApi.claim(id)
-              );
-            }}
-          />
+          <Box sx={{ mt: 4 }}>
+            <UnassignedTasks
+              tasks={unassigned}
+              disabled={pending}
+              onClaim={(id) => {
+                void mutate(() =>
+                  itemsApi.claim(id)
+                );
+              }}
+            />
+          </Box>
         )}
       </Box>
     </Box>

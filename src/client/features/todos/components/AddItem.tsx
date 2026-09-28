@@ -82,6 +82,7 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
         deadline,
         priorisation,
         projectId,
+        status: 'todo',
       });
 
       setName('');
@@ -239,57 +240,3 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
     </Modal>
   );
 }
-
-// ### Important : ton `itemsApi.create`
-
-// Il faut maintenant que le type de création accepte `projectId` :
-
-// ```ts
-// export type ItemInput = {
-//   name: string;
-//   completed: boolean;
-//   deadline: string;
-//   priorisation: Priority;
-//   projectId: string;
-// };
-// ```
-
-// Et ton appel :
-
-// ```ts
-// create: (item: ItemInput) =>
-//   request<TodoItem>('/items', {
-//     method: 'POST',
-//     body: JSON.stringify(item),
-//   }),
-// ```
-
-// Le JSON envoyé au backend sera donc :
-
-// ```json
-// {
-//   "name": "Ma tâche",
-//   "completed": false,
-//   "deadline": "2026-10-01",
-//   "priorisation": "medium",
-//   "projectId": "3147d0d2-a8d3-4337-843f-7f76d6ae9f40"
-// }
-// ```
-
-// ### Côté backend
-
-// Ton endpoint `/items` devra récupérer `projectId` :
-
-// ```ts
-// const {
-//   name,
-//   completed,
-//   deadline,
-//   priorisation,
-//   projectId,
-// } = req.body;
-// ```
-
-// puis le repository devra l'insérer dans `todo_items.project_id`.
-
-// **Petit détail :** dans le code ci-dessus, lorsqu'il y a des projets, le premier est sélectionné automatiquement. Si tu préfères afficher `Sélectionner un projet...` par défaut et obliger l'utilisateur à choisir, je peux te faire cette variante.
