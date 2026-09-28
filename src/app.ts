@@ -6,10 +6,14 @@ import { createTaskRouter } from './modules/tasks/routes';
 import { taskRepository } from './modules/tasks/repository.drizzle';
 import { createProjectRouter } from './modules/project/routes';
 import { projectRepository } from './modules/project/repository.drizzle';
+import { createMetrics } from './infrastructure/metrics';
 
 /** Shared by production and HTTP integration tests; creates no connections. */
 export function createApp(authService: AuthService | undefined, secureCookies: boolean) {
     const app = express();
+    const metrics = createMetrics();
+    app.use(metrics.instrument);
+    app.get('/metrics', metrics.expose);
     app.use(express.json());
     // Liveness for the Docker HEALTHCHECK and the CI smoke test. The server only
     // listens once persistence and eventing have started, so any answer means
@@ -25,7 +29,7 @@ export function createApp(authService: AuthService | undefined, secureCookies: b
     // Serve the single-page application when a frontend route is opened directly.
     app.get('/{*path}', (req, res, next) => {
         // Preserve API and asset 404s instead of responding with the HTML shell.
-        if (/^\/(items|auth|health|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
+        if (/^\/(items|auth|health|metrics|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
             next();
             return;
         }

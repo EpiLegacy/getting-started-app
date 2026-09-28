@@ -22,6 +22,7 @@
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.2",
     "@mui/material": "^7.3.2",
+    "@prometheus-io/client": "^0.16.1",
     "amqplib": "^2.0.1",
     "dotenv": "^17.4.2",
     "drizzle-orm": "0.45.2",

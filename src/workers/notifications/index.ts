@@ -1,24 +1,33 @@
-import { connect, type Channel, type ChannelModel, type ConsumeMessage } from 'amqplib';
+import { connect, type ChannelModel, type ConsumeMessage } from 'amqplib';
 import { closePool, ensureEventSchema } from '../../infrastructure/db/mysql';
 import { init as initDrizzlePool, teardown as teardownDrizzlePool } from '../../infrastructure/db/drizzle';
 import { rabbitmqUrl } from '../../infrastructure/messaging/rabbitmqPublisher';
 import { assertTopology, NOTIFICATIONS_QUEUE } from '../../infrastructure/messaging/topology';
-import { eventEnvelopeSchema } from '../../shared/events/envelope';
 import { resolvePersistenceDriver } from '../../shared/persistenceDriver';
 import { handleTaskEvent } from './handler';
 import { handleTaskEvent as handleTaskEventDrizzle } from './handler.drizzle';
+import { createWorkerMetrics } from './metrics';
+import { createMessageProcessor } from './consumer';
 
 const PREFETCH = 10;
 // A separate process from the API: it validates PERSISTENCE_DRIVER on its
 // own instead of relying on src/persistence/index.ts having run first.
 const useDrizzle = resolvePersistenceDriver() === 'drizzle';
 const runHandleTaskEvent = useDrizzle ? handleTaskEventDrizzle : handleTaskEvent;
+const metrics = createWorkerMetrics();
+const onMessage = createMessageProcessor(runHandleTaskEvent, metrics);
 
 /**
  * Standalone consumer process. Same image as the API, different command: the
  * two share the event schemas, so their contract cannot drift.
  */
 async function main(): Promise<void> {
+    // Private in Compose: never published on a host port.
+    const metricsServer = metrics.app.listen(9000);
+    metricsServer.on('error', (error: Error) => {
+        console.error('[worker] metrics server failed', error);
+        process.exit(1);
+    });
     await ensureEventSchema();
     if (useDrizzle) await initDrizzlePool();
 
@@ -33,6 +42,8 @@ async function main(): Promise<void> {
             maxDelay: 5_000,
             setup: async (connected: ChannelModel) => {
                 const channel = await connected.createChannel();
+                channel.on('close', () => metrics.setConsuming(false));
+                channel.on('error', () => metrics.setConsuming(false));
                 await assertTopology(channel);
 
                 // Bounded in-flight work: without it a single consumer would
@@ -40,22 +51,32 @@ async function main(): Promise<void> {
                 await channel.prefetch(PREFETCH);
 
                 await channel.consume(NOTIFICATIONS_QUEUE, (message: ConsumeMessage | null) => {
-                    if (!message) return;
-                    void onMessage(channel, message);
+                    if (!message) {
+                        metrics.setConsuming(false);
+                        return;
+                    }
+                    void onMessage(channel, message).catch((error: unknown) => {
+                        // An acknowledgement on a closed channel can throw.
+                        // The broker requeues unacknowledged deliveries.
+                        console.error('[worker] delivery interrupted', error);
+                    });
                 });
-
+                metrics.setConsuming(true);
                 console.log(`[worker] consuming ${NOTIFICATIONS_QUEUE}`);
             },
         },
     });
 
     model.on('connect', () => console.log('[worker] connected to rabbitmq'));
-    model.on('disconnect', (error: Error) =>
-        console.error(`[worker] disconnected from rabbitmq: ${error.message}`),
-    );
+    model.on('disconnect', (error: Error) => {
+        metrics.setConsuming(false);
+        console.error(`[worker] disconnected from rabbitmq: ${error.message}`);
+    });
     model.on('error', (error: Error) => console.error(`[worker] rabbitmq: ${error.message}`));
 
     const shutdown = async (): Promise<void> => {
+        metrics.setConsuming(false);
+        metricsServer.close();
         try {
             await model.close();
             await closePool();
@@ -66,41 +87,6 @@ async function main(): Promise<void> {
     };
     process.on('SIGINT', () => void shutdown());
     process.on('SIGTERM', () => void shutdown());
-}
-
-async function onMessage(channel: Channel, message: ConsumeMessage): Promise<void> {
-    // Malformed or off-contract: retrying can never help, so such a message
-    // goes straight to the dead-letter queue.
-    let body: unknown;
-    try {
-        body = JSON.parse(message.content.toString());
-    } catch {
-        console.error('[worker] rejected a message that is not valid JSON');
-        channel.nack(message, false, false);
-        return;
-    }
-
-    const parsed = eventEnvelopeSchema.safeParse(body);
-    if (!parsed.success) {
-        const reasons = parsed.error.issues
-            .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
-            .join('; ');
-        console.error(`[worker] rejected an off-contract message -> ${reasons}`);
-        channel.nack(message, false, false);
-        return;
-    }
-    const envelope = parsed.data;
-
-    try {
-        const outcome = await runHandleTaskEvent(envelope);
-        console.log(`[worker] ${envelope.type} ${envelope.eventId} -> ${outcome}`);
-        channel.ack(message);
-    } catch (error) {
-        // Transient failure (database down, deadlock...): requeue. The queue's
-        // x-delivery-limit dead-letters it after 5 attempts.
-        console.error(`[worker] handling failed for ${envelope.eventId}`, error);
-        channel.nack(message, false, true);
-    }
 }
 
 main().catch((error: unknown) => {
