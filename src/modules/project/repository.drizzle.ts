@@ -35,6 +35,7 @@ export function projectRepository(): ProjectRepository {
     async create(
       userId: string,
       input: ProjectInput,
+      usersEmail: string[],
     ): Promise<Project> {
       const id = randomUUID();
 
@@ -45,6 +46,7 @@ export function projectRepository(): ProjectRepository {
           name: input.name,
           userId,
           createdAt: new Date(),
+          usersEmail
         });
 
       const project = await this.getById(id);
@@ -61,16 +63,152 @@ export function projectRepository(): ProjectRepository {
       userId: string,
       input: Partial<ProjectInput>,
     ): Promise<Project | undefined> {
-      // TODO
-      return undefined;
+      const db = getDb();
+      // Vérifie que le projet appartient à l'utilisateur
+      const existingProject = await db.query.projects.findFirst({
+        where: eq(projects.id, id),
+      });
+
+      if (!existingProject) {
+        return undefined;
+      }
+
+      // Si tu utilises userId comme propriétaire du projet
+      if (existingProject.userId !== userId) {
+        return undefined;
+      }
+
+      const [updatedProject] = await db
+        .update(projects)
+        .set({
+          ...(input.name !== undefined && {
+            name: input.name,
+          }),
+        })
+        .where(eq(projects.id, id));
+
+      if (!updatedProject) {
+        return undefined;
+      }
+
+      return db.query.projects.findFirst({
+        where: eq(projects.id, id),
+      });
     },
 
     async remove(
       id: string,
       userId: string,
     ): Promise<boolean> {
-      // TODO
-      return false;
+      const db = getDb();
+      const existingProject = await db.query.projects.findFirst({
+        where: eq(projects.id, id),
+      });
+
+      if (!existingProject) {
+        return false;
+      }
+
+      // Seul le propriétaire peut supprimer le projet
+      if (existingProject.userId !== userId) {
+        return false;
+      }
+
+      await db
+        .delete(projects)
+        .where(eq(projects.id, id));
+
+      return true;
+    },
+
+    async addUser(
+      projectId: string,
+      userId: string,
+      email: string,
+    ): Promise<Project | undefined> {
+      const db = getDb();
+      const project = await db.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+      });
+
+      if (!project) {
+        return undefined;
+      }
+
+      // Seul le propriétaire peut ajouter un utilisateur
+      if (project.userId !== userId) {
+        return undefined;
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const currentEmails = project.usersEmail ?? [];
+
+      // Évite les doublons
+      if (
+        currentEmails.some(
+          (currentEmail) =>
+            currentEmail.toLowerCase() === normalizedEmail,
+        )
+      ) {
+        return project;
+      }
+
+      const updatedEmails = [
+        ...currentEmails,
+        normalizedEmail,
+      ];
+
+      await db
+        .update(projects)
+        .set({
+          usersEmail: updatedEmails,
+        })
+        .where(eq(projects.id, projectId));
+
+      return db.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+      });
+    },
+
+    async removeUser(
+      projectId: string,
+      userId: string,
+      email: string,
+    ): Promise<Project | undefined> {
+      const db = getDb();
+      const project = await db.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+      });
+
+      if (!project) {
+        return undefined;
+      }
+
+      // Seul le propriétaire peut supprimer un utilisateur
+      if (project.userId !== userId) {
+        return undefined;
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+
+      const currentEmails = project.usersEmail ?? [];
+
+      const updatedEmails = currentEmails.filter(
+        (currentEmail) =>
+          currentEmail.toLowerCase() !== normalizedEmail,
+      );
+
+      await db
+        .update(projects)
+        .set({
+          usersEmail: updatedEmails,
+        })
+        .where(eq(projects.id, projectId));
+
+      return db.query.projects.findFirst({
+        where: eq(projects.id, projectId),
+      });
     },
   };
 }

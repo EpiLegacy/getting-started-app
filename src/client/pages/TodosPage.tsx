@@ -14,6 +14,7 @@ import {
   Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 
@@ -33,12 +34,14 @@ import { projectsApi } from '../features/todos/api/projectApi';
 import { useTasks } from '../features/todos/useTasks';
 
 import { errorMessage } from '../lib/http';
-import { TaskStatus } from '../../types';
+import { Project, TaskStatus } from '../../types';
+import ProjectTable from '../features/todos/components/ProjectTable';
+import { useAuth } from '../features/auth/AuthProvider';
 
-type Project = {
-  id: string;
-  name: string;
-};
+// type Project = {
+// id: string;
+// name: string;
+// };
 
 type DraggedTask = {
   id: string;
@@ -49,19 +52,19 @@ const columns: {
   id: TaskStatus;
   title: string;
 }[] = [
-  {
-    id: 'todo',
-    title: 'Todo',
-  },
-  {
-    id: 'in_progress',
-    title: 'In progress',
-  },
-  {
-    id: 'done',
-    title: 'Done',
-  },
-];
+    {
+      id: 'todo',
+      title: 'Todo',
+    },
+    {
+      id: 'in_progress',
+      title: 'In progress',
+    },
+    {
+      id: 'done',
+      title: 'Done',
+    },
+  ];
 
 export default function TodosPage() {
   const {
@@ -73,7 +76,7 @@ export default function TodosPage() {
     refresh,
     mutate,
   } = useTasks();
-
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [openProject, setOpenProject] = useState(false);
 
@@ -110,31 +113,21 @@ export default function TodosPage() {
   /**
    * Charge les projets.
    */
+  // const [projects, setProjects] = useState<Project[]>([]);
+
   const loadProjects = async () => {
-    const controller = new AbortController();
-
-    setProjectsLoading(true);
-    setProjectsError('');
-
     try {
-      const result = await projectsApi.getAll(
-        controller.signal
-      );
-
-      setProjects(result);
+      const data = await projectsApi.getAll();
+      const myProjects = data.filter((project) =>
+        project.usersEmail?.some((email) => email.toLowerCase() === user?.email.toLowerCase()));
+      setProjects(myProjects);
     } catch (cause) {
-      if (!controller.signal.aborted) {
-        setProjectsError(errorMessage(cause));
-      }
-    } finally {
-      if (!controller.signal.aborted) {
-        setProjectsLoading(false);
-      }
+      console.error(cause);
     }
   };
 
   useEffect(() => {
-    void loadProjects();
+    loadProjects();
   }, []);
 
   /**
@@ -401,7 +394,7 @@ export default function TodosPage() {
               variant="contained"
               startIcon={<AddIcon />}
             >
-              Add item
+              Add task
             </Button>
 
             <Button
@@ -422,6 +415,7 @@ export default function TodosPage() {
         />
 
         <AddItem
+          projects={projects}
           open={open}
           handleClose={handleClose}
           onCreated={refresh}
@@ -488,11 +482,11 @@ export default function TodosPage() {
 
           {(loading ||
             projectsLoading) && (
-            <CircularProgress
-              size={24}
-              aria-label="Loading"
-            />
-          )}
+              <CircularProgress
+                size={24}
+                aria-label="Loading"
+              />
+            )}
         </Box>
 
         {/* Kanban */}
@@ -506,30 +500,46 @@ export default function TodosPage() {
           }}
         >
           {columns.map((column) => {
-            const columnTasks =
-              tasksByStatus[column.id];
+            const columnTasks = tasksByStatus[column.id];
 
-            const isDragOver =
-              dragOverColumn === column.id;
+            const isDragOver = dragOverColumn === column.id;
+
+            const searchValue = search.trim().toLowerCase();
+
+            const filteredColumnTasks = columnTasks.filter((task) => {
+              if (!searchValue) {
+                return true;
+              }
+
+              return task.name?.toLowerCase().includes(searchValue);
+            });
+
+            const sortedColumnTasks = [...filteredColumnTasks].sort(
+              (a, b) => {
+                const priorityOrder: Record<string, number> = {
+                  high: 0,
+                  medium: 1,
+                  low: 2,
+                };
+
+                return (
+                  (priorityOrder[a.priorisation] ?? 3) -
+                  (priorityOrder[b.priorisation] ?? 3)
+                );
+              }
+            );
+
 
             return (
               <Paper
                 key={column.id}
                 elevation={0}
                 onDragOver={(event) =>
-                  handleDragOver(
-                    event,
-                    column.id
-                  )
+                  handleDragOver(event, column.id)
                 }
-                onDragLeave={
-                  handleDragLeave
-                }
+                onDragLeave={handleDragLeave}
                 onDrop={(event) =>
-                  void handleDrop(
-                    event,
-                    column.id
-                  )
+                  void handleDrop(event, column.id)
                 }
                 sx={{
                   flex: '1 1 0',
@@ -542,10 +552,9 @@ export default function TodosPage() {
                   borderColor: isDragOver
                     ? 'primary.main'
                     : 'divider',
-                  backgroundColor:
-                    isDragOver
-                      ? 'action.hover'
-                      : 'background.default',
+                  backgroundColor: isDragOver
+                    ? 'action.hover'
+                    : 'background.default',
                   transition:
                     'border-color 0.15s, background-color 0.15s',
                 }}
@@ -555,8 +564,7 @@ export default function TodosPage() {
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent:
-                      'space-between',
+                    justifyContent: 'space-between',
                     mb: 1.5,
                     px: 0.5,
                   }}
@@ -576,169 +584,156 @@ export default function TodosPage() {
 
                 {/* Cards */}
                 <Stack spacing={1.5}>
-                  {columnTasks.map(
-                    (row) => (
-                      <Card
-                        key={row.id}
-                        draggable
-                        onDragStart={(event) =>
-                          handleDragStart(
-                            event,
-                            {
-                              id: row.id,
-                              status:
-                                (row.status as TaskStatus) ??
-                                'todo',
-                            }
-                          )
-                        }
-                        onDragEnd={
-                          handleDragEnd
-                        }
+                  {sortedColumnTasks.map((row) => (
+                    <Card
+                      key={row.id}
+                      draggable
+                      onDragStart={(event) =>
+                        handleDragStart(event, {
+                          id: row.id,
+                          status:
+                            (row.status as TaskStatus) ??
+                            'todo',
+                        })
+                      }
+                      onDragEnd={handleDragEnd}
+                      sx={{
+                        cursor: 'grab',
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        borderRadius: 2,
+                        transition:
+                          'box-shadow 0.15s, transform 0.15s',
+                        '&:hover': {
+                          boxShadow: 3,
+                        },
+                        '&:active': {
+                          cursor: 'grabbing',
+                        },
+                        opacity:
+                          draggedTask?.id === row.id
+                            ? 0.5
+                            : 1,
+                      }}
+                    >
+                      <CardContent
                         sx={{
-                          cursor: 'grab',
-                          border:
-                            '1px solid',
-                          borderColor:
-                            'divider',
-                          borderRadius: 2,
-                          transition:
-                            'box-shadow 0.15s, transform 0.15s',
-                          '&:hover': {
-                            boxShadow: 3,
+                          '&:last-child': {
+                            pb: 2,
                           },
-                          '&:active': {
-                            cursor: 'grabbing',
-                          },
-                          opacity:
-                            draggedTask?.id ===
-                            row.id
-                              ? 0.5
-                              : 1,
                         }}
                       >
-                        <CardContent
+                        {/* Task name + delete */}
+                        <Box
                           sx={{
-                            '&:last-child': {
-                              pb: 2,
-                            },
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            justifyContent: 'space-between',
+                            gap: 1,
                           }}
                         >
-                          {/* Task name + delete */}
-                          <Box
+                          <Typography
+                            variant="subtitle2"
+                            fontWeight={600}
                             sx={{
-                              display:
-                                'flex',
-                              alignItems:
-                                'flex-start',
-                              justifyContent:
-                                'space-between',
-                              gap: 1,
+                              wordBreak: 'break-word',
                             }}
                           >
-                            <Typography
-                              variant="subtitle2"
-                              fontWeight={600}
-                              sx={{
-                                wordBreak:
-                                  'break-word',
-                              }}
-                            >
-                              {row.name ||
-                                'Untitled task'}
-                            </Typography>
+                            {row.name ||
+                              'Untitled task'}
+                          </Typography>
 
-                            <IconButton
-                              size="small"
-                              disabled={
-                                loading ||
-                                pending
-                              }
-                              aria-label={`Delete ${row.name}`}
-                              onClick={() =>
-                                handleDeleteItem(
-                                  row.id
-                                )
-                              }
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
+                          <IconButton
+                            size="small"
+                            disabled={
+                              loading || pending
+                            }
+                            aria-label={`Delete ${row.name}`}
+                            onClick={() =>
+                              handleDeleteItem(
+                                row.id
+                              )
+                            }
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
 
-                          {/* Project */}
+                        {/* Project */}
+                        <Tooltip title="Project">
                           <Typography
                             variant="body2"
                             color="text.secondary"
                             sx={{
                               mt: 1,
                               mb: 1,
+                              display: 'inline-block',
                             }}
                           >
                             {getProjectName(
                               row.projectId
                             )}
                           </Typography>
+                        </Tooltip>
 
-                          {/* Metadata */}
-                          <Box
-                            sx={{
-                              display:
-                                'flex',
-                              alignItems:
-                                'center',
-                              gap: 1,
-                              flexWrap:
-                                'wrap',
-                            }}
-                          >
+                        {/* Metadata */}
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <Tooltip title="Priorisation">
                             <Chip
                               size="medium"
-                              label={
-                                row.priorisation
-                              }
+                              label={row.priorisation}
                               color={
-                                row.priorisation === 'high' ? 'error' : 
-                                row.priorisation === 'medium' ? 'warning' :
-                                'success'
+                                row.priorisation ===
+                                  'high'
+                                  ? 'error'
+                                  : row.priorisation ===
+                                    'medium'
+                                    ? 'warning'
+                                    : 'success'
                               }
                             />
+                          </Tooltip>
 
+                          <Tooltip title="Deadline">
                             <Chip
                               size="medium"
                               variant="outlined"
                               label={
                                 row.deadline
                                   ? new Date(
-                                      row.deadline
-                                    ).toLocaleDateString(
-                                      'fr-FR'
-                                    )
+                                    row.deadline
+                                  ).toLocaleDateString(
+                                    'fr-FR'
+                                  )
                                   : 'No deadline'
                               }
                             />
-                          </Box>
-                        </CardContent>
-                      </Card>
-                    )
-                  )}
+                          </Tooltip>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))}
 
                   {/* Empty column */}
-                  {columnTasks.length ===
-                    0 && (
+                  {columnTasks.length === 0 && (
                     <Box
                       sx={{
                         minHeight: 120,
                         border: '1px dashed',
-                        borderColor:
-                          isDragOver
-                            ? 'primary.main'
-                            : 'divider',
+                        borderColor: isDragOver
+                          ? 'primary.main'
+                          : 'divider',
                         borderRadius: 2,
                         display: 'flex',
-                        alignItems:
-                          'center',
-                        justifyContent:
-                          'center',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         p: 2,
                       }}
                     >
@@ -755,6 +750,22 @@ export default function TodosPage() {
               </Paper>
             );
           })}
+        </Box>
+
+        <Box>
+          <Typography
+            variant="subtitle1"
+            fontWeight={700}
+            sx={{
+              mt: 2,
+            }}
+          >
+            Your Projects
+          </Typography>
+          <ProjectTable
+            projects={projects}
+            onUpdated={loadProjects}
+          />
         </Box>
 
         {/* Unassigned tasks */}

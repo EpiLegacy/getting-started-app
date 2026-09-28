@@ -10,6 +10,7 @@ export interface ProjectRepository {
   create(
     userId: string,
     input: ProjectInput,
+    usersEmail: string[],
   ): Promise<Project>;
 
   list(): Promise<Project[]>;
@@ -24,4 +25,16 @@ export interface ProjectRepository {
     id: string,
     userId: string,
   ): Promise<boolean>;
+
+  addUser(
+    projectId: string,
+    userId: string,
+    email: string,
+  ): Promise<Project | undefined>;
+
+  removeUser(
+    projectId: string,
+    userId: string,
+    email: string,
+  ): Promise<Project | undefined>;
 }

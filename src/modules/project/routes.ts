@@ -17,23 +17,91 @@ export function createProjectRouter(
   }
   router.use(requireAuth(authService));
 
-  
+
   router.get('/', async (_req, res) => {
     res.json(await projectRepository.list());
   });
 
   router.post('/', async (req, res) => {
-    const { name } = req.body;
+    const { name, usersEmail } = req.body;
     const userId = currentUser(res).id;
-  
+
     const project = await projectRepository.create(
       userId,
       {
         name: name.trim(),
       },
+      usersEmail
     );
-  
+
     return res.status(201).json(project);
+  });
+
+  router.patch('/:id', async (req, res) => {
+    const project = await projectRepository.update(
+      req.params.id,
+      currentUser(res).id,
+      req.body,
+    );
+
+    if (!project) {
+      return res.status(404).json({
+        message: 'Projet introuvable ou accès refusé',
+      });
+    }
+
+    return res.json(project);
+  });
+
+  router.delete('/:id', async (req, res) => {
+    const deleted = await projectRepository.remove(
+      req.params.id,
+      currentUser(res).id,
+    );
+
+    if (!deleted) {
+      return res.status(404).json({
+        message: 'Projet introuvable ou accès refusé',
+      });
+    }
+
+    return res.status(204).send();
+  });
+
+  router.post('/:id/users', async (req, res) => {
+    const { email } = req.body;
+
+    const project = await projectRepository.addUser(
+      req.params.id,
+      currentUser(res).id,
+      email,
+    );
+
+    if (!project) {
+      return res.status(404).json({
+        message: 'Projet introuvable ou accès refusé',
+      });
+    }
+
+    return res.json(project);
+  });
+
+  router.delete('/:id/users', async (req, res) => {
+    const { email } = req.body;
+
+    const project = await projectRepository.removeUser(
+      req.params.id,
+      currentUser(res).id,
+      email,
+    );
+
+    if (!project) {
+      return res.status(404).json({
+        message: 'Projet introuvable ou accès refusé',
+      });
+    }
+
+    return res.json(project);
   });
 
   return router;

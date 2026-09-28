@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `users_email` json;

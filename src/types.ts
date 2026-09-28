@@ -17,6 +17,7 @@ export type Project = {
   name: string;
   userId: string | null;
   createdAt: Date;
+  usersEmail: string[] | null,
 };
 
 export interface StoredItem {

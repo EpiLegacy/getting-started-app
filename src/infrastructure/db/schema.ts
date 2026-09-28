@@ -23,6 +23,8 @@ export const projects = mysqlTable(
       onDelete: 'set null',
     }),
 
+    usersEmail: json('users_email').$type<string[]>(),
+
     createdAt: datetime('created_at', {
       fsp: 3,
     }).notNull(),

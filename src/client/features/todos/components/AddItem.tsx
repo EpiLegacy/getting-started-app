@@ -3,24 +3,23 @@ import { Alert, Box, Button, MenuItem, Modal, TextField, Typography } from '@mui
 import { itemsApi } from '../api/itemsApi';
 import { projectsApi } from '../api/projectApi';
 import { errorMessage } from '../../../lib/http';
-import type { Priority } from '../../../../types';
+import type { Priority, Project } from '../../../../types';
+import { useAuth } from '../../auth/AuthProvider';
 
 interface AddItemProps {
+  projects: Project[];
   open: boolean;
   handleClose: () => void;
   onCreated: () => void;
 }
 
-export default function AddItem({ open, handleClose, onCreated }: AddItemProps) {
+export default function AddItem({ projects, open, handleClose, onCreated }: AddItemProps) {
+  const { user } = useAuth();
   const [name, setName] = useState<string>('');
   const [deadline, setDeadline] = useState<string>('');
   const [priorisation, setPriorisation] = useState<Priority>('medium');
-
   const [projectId, setProjectId] = useState<string>('');
-  const [projects, setProjects] = useState<
-    { id: string; name: string }[]
-  >([]);
-
+  const [myProjects, setMyProjects] = useState<Project[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -28,38 +27,15 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
   useEffect(() => {
     if (!open) return;
 
-    const controller = new AbortController();
+    if (user?.email != undefined) {
+      const userEmail = user?.email;
 
-    const getProjects = async () => {
-      setLoadingProjects(true);
-      setError('');
+      const res = projects.filter((project) =>
+        project.usersEmail?.some((email) =>
+          email.toLowerCase() === userEmail.toLowerCase()));
+      setMyProjects(res);
+    }
 
-      try {
-        const res = await projectsApi.getAll(controller.signal);
-
-        setProjects(res);
-
-        if (res.length > 0) {
-          setProjectId(res[0].id);
-        } else {
-          setProjectId('');
-        }
-      } catch (cause) {
-        if (!controller.signal.aborted) {
-          setError(errorMessage(cause));
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoadingProjects(false);
-        }
-      }
-    };
-
-    getProjects();
-
-    return () => {
-      controller.abort();
-    };
   }, [open]);
 
   const handleSubmit = async (
@@ -88,8 +64,6 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
       setName('');
       setDeadline('');
       setPriorisation('medium');
-      setProjectId('');
-
       onCreated();
       handleClose();
     } catch (cause) {
@@ -154,14 +128,14 @@ export default function AddItem({ open, handleClose, onCreated }: AddItemProps) 
         ) : (
           <TextField
             name="projectId"
-            label="Projet"
+            label="Project"
             select
             required
             fullWidth
             value={projectId}
             onChange={(event) => setProjectId(event.target.value)}
           >
-            {projects.map((project) => (
+            {myProjects.map((project) => (
               <MenuItem key={project.id} value={project.id}>
                 {project.name}
               </MenuItem>

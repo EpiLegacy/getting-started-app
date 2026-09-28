@@ -4,6 +4,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Modal,
   TextField,
   Typography,
@@ -11,6 +12,7 @@ import {
 
 import { errorMessage } from '../../../lib/http';
 import { projectsApi } from '../api/projectApi';
+import { useAuth } from '../../auth/AuthProvider';
 
 interface AddProjectProps {
   open: boolean;
@@ -23,9 +25,43 @@ export default function AddProject({
   handleClose,
   onCreated,
 }: AddProjectProps) {
+  const { user } = useAuth();
   const [name, setName] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
+  const [usersEmail, setUsersEmail] = useState<string[]>([]);
+
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const handleAddUser = () => {
+    const email = userEmail.trim();
+
+    if (!email) {
+      return;
+    }
+
+    // Évite les doublons
+    if (usersEmail.includes(email)) {
+      setError('Cet utilisateur a déjà été ajouté.');
+      return;
+    }
+
+    // Vérification simple de l'email
+    if (!email.includes('@')) {
+      setError('Veuillez entrer une adresse email valide.');
+      return;
+    }
+
+    setUsersEmail((current) => [...current, email]);
+    setUserEmail('');
+    setError('');
+  };
+
+  const handleRemoveUser = (emailToRemove: string) => {
+    setUsersEmail((current) =>
+      current.filter((email) => email !== emailToRemove)
+    );
+  };
 
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>
@@ -36,12 +72,21 @@ export default function AddProject({
     setError('');
 
     try {
-      const res = await projectsApi.create(name);
+      const emails = user?.email
+        ? usersEmail.includes(user.email)
+          ? usersEmail
+          : [user.email, ...usersEmail]
+        : usersEmail;
+
+      await projectsApi.create(name, emails);
+
       setName('');
+      setUserEmail('');
+      setUsersEmail([]);
+
       onCreated();
       handleClose();
     } catch (cause) {
-      console.error(cause);
       setError(errorMessage(cause));
     } finally {
       setBusy(false);
@@ -95,7 +140,56 @@ export default function AddProject({
           value={name}
           onChange={(event) => setName(event.target.value)}
           autoFocus
+          disabled={busy}
         />
+
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <TextField
+            name="userEmail"
+            label="Email de l'utilisateur"
+            type="email"
+            variant="outlined"
+            fullWidth
+            value={userEmail}
+            onChange={(event) => setUserEmail(event.target.value)}
+            placeholder="utilisateur@example.com"
+            disabled={busy}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                handleAddUser();
+              }
+            }}
+          />
+
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={handleAddUser}
+            disabled={busy || !userEmail.trim()}
+          >
+            Ajouter
+          </Button>
+        </Box>
+
+        {usersEmail.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1,
+            }}
+          >
+            {usersEmail.map((email) => (
+              <Chip
+                key={email}
+                label={email}
+                onDelete={() => handleRemoveUser(email)}
+                disabled={busy}
+              />
+            ))}
+          </Box>
+        )}
 
         <Box
           sx={{
