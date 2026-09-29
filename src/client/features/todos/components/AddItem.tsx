@@ -5,6 +5,7 @@ import { projectsApi } from '../api/projectApi';
 import { errorMessage } from '../../../lib/http';
 import type { Priority, Project } from '../../../../types';
 import { useAuth } from '../../auth/AuthProvider';
+import { authApi } from '../../auth/api';
 
 interface AddItemProps {
   projects: Project[];
@@ -19,6 +20,7 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
   const [deadline, setDeadline] = useState<string>('');
   const [priorisation, setPriorisation] = useState<Priority>('medium');
   const [projectId, setProjectId] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
   const [myProjects, setMyProjects] = useState<Project[]>([]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,11 +30,11 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
     if (!open) return;
 
     if (user?.email != undefined) {
-      const userEmail = user?.email;
+      const mail = user?.email;
 
       const res = projects.filter((project) =>
         project.usersEmail?.some((email) =>
-          email.toLowerCase() === userEmail.toLowerCase()));
+          email.toLowerCase() === mail.toLowerCase()));
       setMyProjects(res);
     }
 
@@ -51,7 +53,9 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
     setBusy(true);
     setError('');
 
+    // TODO: afficher toutes les task dans projet dans lequel je suis 
     try {
+      const response = await authApi.findByEmail(userEmail);
       await itemsApi.create({
         completed: false,
         name,
@@ -59,14 +63,14 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
         priorisation,
         projectId,
         status: 'todo',
-      });
-
+      }, response.user.id);
       setName('');
       setDeadline('');
       setPriorisation('medium');
       onCreated();
       handleClose();
     } catch (cause) {
+      console.error('CREATE TASK ERROR:', cause);
       setError(errorMessage(cause));
     } finally {
       setBusy(false);
@@ -113,6 +117,16 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
           </Alert>
         )}
 
+        <TextField
+          name="name"
+          label="Nom de la task"
+          variant="outlined"
+          required
+          fullWidth
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+        />
+
         {loadingProjects ? (
           <TextField
             label="Projet"
@@ -143,15 +157,25 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
           </TextField>
         )}
 
-        <TextField
-          name="name"
-          label="Nom"
-          variant="outlined"
-          required
-          fullWidth
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
+        {projectId && (
+          <TextField
+            name="userEmail"
+            label="Utilisateur"
+            select
+            required
+            fullWidth
+            value={userEmail}
+            onChange={(event) => setUserEmail(event.target.value)}
+          >
+            {myProjects
+              .find((project) => project.id === projectId)
+              ?.usersEmail?.map((email) => (
+                <MenuItem key={email} value={email}>
+                  {email}
+                </MenuItem>
+              ))}
+          </TextField>
+        )}
 
         <TextField
           name="deadline"

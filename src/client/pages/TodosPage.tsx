@@ -38,11 +38,6 @@ import { Project, TaskStatus } from '../../types';
 import ProjectTable from '../features/todos/components/ProjectTable';
 import { useAuth } from '../features/auth/AuthProvider';
 
-// type Project = {
-// id: string;
-// name: string;
-// };
-
 type DraggedTask = {
   id: string;
   status: TaskStatus;
@@ -113,8 +108,6 @@ export default function TodosPage() {
   /**
    * Charge les projets.
    */
-  // const [projects, setProjects] = useState<Project[]>([]);
-
   const loadProjects = async () => {
     try {
       const data = await projectsApi.getAll();
@@ -716,6 +709,15 @@ export default function TodosPage() {
                               }
                             />
                           </Tooltip>
+
+                          <Tooltip title="User email">
+                            <Chip
+                              size="medium"
+                              variant="outlined"
+                              label={row.userId}
+                            />
+                          </Tooltip>
+
                         </Box>
                       </CardContent>
                     </Card>

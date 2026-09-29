@@ -6,6 +6,7 @@ import type { AuthService } from '../auth/service';
 import type { TaskRepository } from './types';
 
 const taskInput = z.object({
+    userId: z.string(),
     name: z.string().trim().min(1).max(255),
     completed: z.boolean(),
     status: z.enum(['todo', 'in_progress', 'done']),
@@ -40,7 +41,7 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
             res.status(400).json({ error: 'invalid_task', issues: parsed.error.issues });
             return;
         }
-        res.status(201).json(await repository.create(currentUser(res).id, parsed.data));
+        res.status(201).json(await repository.create(parsed.data.userId, parsed.data));
     });
     router.param('id', (req, res, next, id) => {
         const parsed = taskId.safeParse(id);

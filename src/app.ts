@@ -7,6 +7,7 @@ import { taskRepository } from './modules/tasks/repository.drizzle';
 import { createProjectRouter } from './modules/project/routes';
 import { projectRepository } from './modules/project/repository.drizzle';
 import { createMetrics } from './infrastructure/metrics';
+import { drizzleAuthRepository } from './modules/auth/repository.drizzle';
 
 /** Shared by production and HTTP integration tests; creates no connections. */
 export function createApp(authService: AuthService | undefined, secureCookies: boolean) {
@@ -21,7 +22,7 @@ export function createApp(authService: AuthService | undefined, secureCookies: b
     // neither need an account nor fail because MySQL is slow for a moment.
     app.get('/health', (_req: unknown, res: { json: (body: unknown) => void }) => res.json({ status: 'ok' }));
     app.use(express.static(path.join(__dirname, '../dist')));
-    app.use('/auth', createAuthRouter(authService, { secureCookies }));
+    app.use('/auth', createAuthRouter(authService, drizzleAuthRepository, { secureCookies }));
 
     app.use('/items', createTaskRouter(authService, taskRepository));
     app.use('/projects', createProjectRouter(authService,projectRepository(),),);

@@ -5,7 +5,10 @@ import { request } from '../../../lib/http';
 export const itemsApi = {
   getAll: (signal?: AbortSignal) => request<Task[]>('/items', { signal }),
   getUnassigned: (signal?: AbortSignal) => request<Task[]>('/items/unassigned', { signal }),
-  create: (item: Omit<Item, 'id'>) => request<Task>('/items', { method: 'POST', body: JSON.stringify(item) }),
+  create: (
+    item: Omit<Item, 'id'>,
+    userId: string,
+  ) => request<Task>('/items', {   method: 'POST',   body: JSON.stringify({     ...item,     userId,   }), }),
   update: (item: Item) => request<Task>(`/items/${encodeURIComponent(item.id)}`, {
     method: 'PUT',
     body: JSON.stringify({ name: item.name, completed: item.completed, deadline: item.deadline, priorisation: item.priorisation }),

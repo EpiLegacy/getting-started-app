@@ -108,8 +108,7 @@ export function projectRepository(): ProjectRepository {
       if (!existingProject) {
         return false;
       }
-
-      // Seul le propriétaire peut supprimer le projet
+      
       if (existingProject.userId !== userId) {
         return false;
       }
@@ -135,7 +134,6 @@ export function projectRepository(): ProjectRepository {
         return undefined;
       }
 
-      // Seul le propriétaire peut ajouter un utilisateur
       if (project.userId !== userId) {
         return undefined;
       }
@@ -144,7 +142,6 @@ export function projectRepository(): ProjectRepository {
 
       const currentEmails = project.usersEmail ?? [];
 
-      // Évite les doublons
       if (
         currentEmails.some(
           (currentEmail) =>
@@ -185,7 +182,6 @@ export function projectRepository(): ProjectRepository {
         return undefined;
       }
 
-      // Seul le propriétaire peut supprimer un utilisateur
       if (project.userId !== userId) {
         return undefined;
       }
