@@ -4,6 +4,7 @@ import { request } from '../../../lib/http';
 
 export const itemsApi = {
   getAll: (signal?: AbortSignal) => request<Task[]>('/items', { signal }),
+  getAllItems: (signal?: AbortSignal) => request<Task[]>('/items/all', { signal }),
   getUnassigned: (signal?: AbortSignal) => request<Task[]>('/items/unassigned', { signal }),
   create: (
     item: Omit<Item, 'id'>,

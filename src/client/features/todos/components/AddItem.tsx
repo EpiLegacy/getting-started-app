@@ -53,7 +53,6 @@ export default function AddItem({ projects, open, handleClose, onCreated }: AddI
     setBusy(true);
     setError('');
 
-    // TODO: afficher toutes les task dans projet dans lequel je suis 
     try {
       const response = await authApi.findByEmail(userEmail);
       await itemsApi.create({

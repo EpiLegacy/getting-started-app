@@ -9,6 +9,7 @@ export type TaskInput = Omit<Item, 'id'>;
 
 export interface TaskRepository {
     list(userId: string): Promise<Task[]>;
+    listAll(): Promise<Task[]>;
     listUnassigned(): Promise<Task[]>;
     create(userId: string, input: TaskInput): Promise<Task>;
     claim(id: number, userId: string): Promise<boolean>;

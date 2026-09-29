@@ -122,5 +122,13 @@ export const taskRepository: TaskRepository = {
         }
 
         return this.getById(id, userId);
-    }
+    },
+    async listAll() {
+        const rows = await getDb()
+            .select()
+            .from(todoItems)
+            .orderBy(asc(todoItems.taskKey));
+
+        return rows.map(toTask);
+    },
 };

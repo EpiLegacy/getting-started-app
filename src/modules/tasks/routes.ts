@@ -32,6 +32,9 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
     router.get('/', async (_req, res) => {
         res.json(await repository.list(currentUser(res).id));
     });
+    router.get('/all', async (_req, res) => {
+        res.json(await repository.listAll());
+    });
     router.get('/unassigned', async (_req, res) => {
         res.json(await repository.listUnassigned());
     });

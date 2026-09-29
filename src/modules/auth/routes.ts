@@ -418,5 +418,33 @@ export function createAuthRouter(
         },
     );
 
+    router.get(
+        '/users/id/:id',
+        requireAuth(service),
+        async (
+            req: Request<{ id: string }>,
+            res,
+        ) => {
+            const user =
+                await userRepository.findUserById(
+                    req.params.id,
+                );
+
+            if (!user) {
+                res.status(404).json({
+                    error: 'user_not_found',
+                });
+                return;
+            }
+
+            res.json({
+                user: {
+                    id: user.id,
+                    email: user.email,
+                },
+            });
+        },
+    );
+
     return router;
 }

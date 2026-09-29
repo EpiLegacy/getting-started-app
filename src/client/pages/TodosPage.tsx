@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   CardContent,
-  Checkbox,
   Chip,
   CircularProgress,
   IconButton,
@@ -37,6 +36,8 @@ import { errorMessage } from '../lib/http';
 import { Project, TaskStatus } from '../../types';
 import ProjectTable from '../features/todos/components/ProjectTable';
 import { useAuth } from '../features/auth/AuthProvider';
+import { Task } from '../../modules/tasks/types';
+import { authApi } from '../features/auth/api';
 
 type DraggedTask = {
   id: string;
@@ -47,23 +48,33 @@ const columns: {
   id: TaskStatus;
   title: string;
 }[] = [
-    {
-      id: 'todo',
-      title: 'Todo',
-    },
-    {
-      id: 'in_progress',
-      title: 'In progress',
-    },
-    {
-      id: 'done',
-      title: 'Done',
-    },
-  ];
+  {
+    id: 'todo',
+    title: 'Todo',
+  },
+  {
+    id: 'in_progress',
+    title: 'In progress',
+  },
+  {
+    id: 'done',
+    title: 'Done',
+  },
+];
+
+/**
+ * Route permettant de récupérer un utilisateur
+ * à partir de son ID.
+ *
+ * Si ton backend possède un préfixe, par exemple :
+ * /api/auth/users/id/:id
+ *
+ * alors remplace cette constante.
+ */
+const USER_BY_ID_URL = '/auth/users/id';
 
 export default function TodosPage() {
   const {
-    items,
     unassigned,
     loading,
     pending,
@@ -71,23 +82,52 @@ export default function TodosPage() {
     refresh,
     mutate,
   } = useTasks();
+
   const { user } = useAuth();
+
   const [open, setOpen] = useState(false);
-  const [openProject, setOpenProject] = useState(false);
+  const [openProject, setOpenProject] =
+    useState(false);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] =
+    useState('');
 
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] =
+    useState<Project[]>([]);
+
+  const [items, setItems] =
+    useState<Task[]>([]);
+
   const [projectsLoading, setProjectsLoading] =
     useState(false);
 
-  const [projectsError, setProjectsError] = useState('');
+  const [projectsError, setProjectsError] =
+    useState('');
 
   const [draggedTask, setDraggedTask] =
     useState<DraggedTask | null>(null);
 
   const [dragOverColumn, setDragOverColumn] =
     useState<TaskStatus | null>(null);
+
+  /**
+   * Cache des emails.
+   *
+   * Exemple :
+   *
+   * {
+   *   "abc123": "john@gmail.com",
+   *   "def456": "alice@gmail.com"
+   * }
+   */
+  const [userEmails, setUserEmails] =
+    useState<Record<string, string>>({});
+
+  /**
+   * ============================
+   * Modals
+   * ============================
+   */
 
   const handleOpen = () => {
     setOpen(true);
@@ -106,96 +146,296 @@ export default function TodosPage() {
   };
 
   /**
-   * Charge les projets.
+   * ============================
+   * Projects + Tasks
+   * ============================
+   */
+
+  /**
+   * Charge les projets auxquels l'utilisateur
+   * connecté est rattaché ainsi que les tâches.
    */
   const loadProjects = async () => {
+    if (!user?.email) {
+      return;
+    }
+
     try {
-      const data = await projectsApi.getAll();
-      const myProjects = data.filter((project) =>
-        project.usersEmail?.some((email) => email.toLowerCase() === user?.email.toLowerCase()));
+      setProjectsLoading(true);
+      setProjectsError('');
+
+      const data =
+        await projectsApi.getAll();
+
+      const taskItems =
+        await itemsApi.getAllItems();
+
+      const userEmail =
+        user.email.toLowerCase();
+
+      const myProjects =
+        data.filter((project) =>
+          project.usersEmail?.some(
+            (email) =>
+              email.toLowerCase() ===
+              userEmail
+          )
+        );
+
+      setItems(taskItems);
       setProjects(myProjects);
     } catch (cause) {
       console.error(cause);
+
+      setProjectsError(
+        errorMessage(cause)
+      );
+    } finally {
+      setProjectsLoading(false);
     }
   };
 
+  /**
+   * Recharge les projets lorsque
+   * l'utilisateur est disponible.
+   */
   useEffect(() => {
-    loadProjects();
-  }, []);
+    if (user?.email) {
+      void loadProjects();
+    }
+  }, [user?.email]);
+
+  /**
+   * ============================
+   * User emails
+   * ============================
+   */
+
+  /**
+   * Récupère l'email d'un utilisateur
+   * à partir de son ID.
+   *
+   * Appelle :
+   *
+   * GET /users/id/:id
+   */
+  const getUserEmail = async (
+    userId: string
+  ) => {
+    /**
+     * Pas d'ID => rien à faire.
+     */
+    if (!userId) {
+      return;
+    }
+
+    /**
+     * Si on possède déjà l'email,
+     * inutile de refaire une requête.
+     */
+    if (userEmails[userId]) {
+      return;
+    }
+
+    
+
+    try {
+      const response = await authApi.findById(userId);
+      const email = response.user.email;
+
+      if (!email) {
+        return;
+      }
+
+      setUserEmails(
+        (currentEmails) => ({
+          ...currentEmails,
+          [userId]: email,
+        })
+      );
+    } catch (cause) {
+      console.error(
+        'Unable to retrieve user email',
+        cause
+      );
+    }
+  };
+
+  /**
+   * Dès que les tâches sont disponibles,
+   * récupère les emails des utilisateurs
+   * associés aux tâches.
+   */
+  useEffect(() => {
+    const loadUserEmails = async () => {
+      const userIds = [
+        ...new Set(
+          items
+            .map(
+              (item) => item.userId
+            )
+            .filter(
+              (
+                userId
+              ): userId is string =>
+                Boolean(userId)
+            )
+        ),
+      ];
+
+      await Promise.all(
+        userIds.map((userId) =>
+          getUserEmail(userId)
+        )
+      );
+    };
+
+    if (items.length > 0) {
+      void loadUserEmails();
+    }
+  }, [items]);
+
+  /**
+   * ============================
+   * Project helpers
+   * ============================
+   */
 
   /**
    * Permet de retrouver le nom du projet
    * à partir du projectId de la tâche.
    */
   const getProjectName = (
-    projectId: string | null | undefined
+    projectId:
+      | string
+      | null
+      | undefined
   ) => {
     if (!projectId) {
       return 'No project';
     }
 
-    const project = projects.find(
-      (project) => project.id === projectId
-    );
+    const project =
+      projects.find(
+        (project) =>
+          project.id === projectId
+      );
 
-    return project?.name ?? 'Unknown project';
+    return (
+      project?.name ??
+      'Unknown project'
+    );
   };
 
   /**
-   * Recherche.
+   * ============================
+   * Tasks filtering
+   * ============================
+   */
+
+  /**
+   * Garde uniquement les tâches
+   * des projets auxquels l'utilisateur
+   * est rattaché.
+   */
+  const myProjectTasks = useMemo(() => {
+    const myProjectIds =
+      new Set(
+        projects.map(
+          (project) => project.id
+        )
+      );
+
+    return items.filter(
+      (item) =>
+        item.projectId &&
+        myProjectIds.has(
+          item.projectId
+        )
+    );
+  }, [items, projects]);
+
+  /**
+   * Recherche parmi les tâches.
+   *
+   * La recherche fonctionne sur :
+   * - le nom de la tâche ;
+   * - le nom du projet.
    */
   const filteredItems = useMemo(() => {
     const normalizedSearch =
       search.trim().toLowerCase();
 
     if (!normalizedSearch) {
-      return items;
+      return myProjectTasks;
     }
 
-    return items.filter((item) => {
-      const taskName =
-        item.name?.toLowerCase() ?? '';
+    return myProjectTasks.filter(
+      (item) => {
+        const taskName =
+          item.name?.toLowerCase() ??
+          '';
 
-      const projectName =
-        getProjectName(item.projectId).toLowerCase();
+        const projectName =
+          getProjectName(
+            item.projectId
+          ).toLowerCase();
 
-      return (
-        taskName.includes(normalizedSearch) ||
-        projectName.includes(normalizedSearch)
-      );
-    });
-  }, [items, search, projects]);
+        return (
+          taskName.includes(
+            normalizedSearch
+          ) ||
+          projectName.includes(
+            normalizedSearch
+          )
+        );
+      }
+    );
+  }, [
+    myProjectTasks,
+    search,
+    projects,
+  ]);
 
   /**
-   * Regroupe les tâches par colonne.
+   * ============================
+   * Tasks by status
+   * ============================
    */
+
   const tasksByStatus = useMemo(() => {
     const result: Record<
       TaskStatus,
-      typeof filteredItems
+      Task[]
     > = {
       todo: [],
       in_progress: [],
       done: [],
     };
 
-    filteredItems.forEach((item) => {
-      const status =
-        (item.status as TaskStatus) ?? 'todo';
+    filteredItems.forEach(
+      (item) => {
+        const status =
+          (item.status as TaskStatus) ??
+          'todo';
 
-      if (status in result) {
-        result[status].push(item);
-      } else {
-        result.todo.push(item);
+        if (status in result) {
+          result[status].push(item);
+        } else {
+          result.todo.push(item);
+        }
       }
-    });
+    );
 
     return result;
   }, [filteredItems]);
 
   /**
+   * ============================
    * Drag & Drop
+   * ============================
    */
+
   const handleDragStart = (
     event: React.DragEvent,
     task: {
@@ -203,14 +443,16 @@ export default function TodosPage() {
       status?: TaskStatus;
     }
   ) => {
-    const data: DraggedTask = {
+    const status =
+      task.status ?? 'todo';
+
+    setDraggedTask({
       id: task.id,
-      status: task.status ?? 'todo',
-    };
+      status,
+    });
 
-    setDraggedTask(data);
-
-    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.effectAllowed =
+      'move';
 
     event.dataTransfer.setData(
       'text/plain',
@@ -222,9 +464,14 @@ export default function TodosPage() {
     event: React.DragEvent,
     status: TaskStatus
   ) => {
+    /**
+     * Obligatoire pour permettre
+     * le drop.
+     */
     event.preventDefault();
 
-    event.dataTransfer.dropEffect = 'move';
+    event.dataTransfer.dropEffect =
+      'move';
 
     setDragOverColumn(status);
   };
@@ -241,21 +488,72 @@ export default function TodosPage() {
 
     setDragOverColumn(null);
 
-    if (!draggedTask) {
+    /**
+     * Récupère l'ID stocké au début
+     * du drag.
+     */
+    const taskId =
+      event.dataTransfer.getData(
+        'text/plain'
+      );
+
+    if (!taskId) {
+      setDraggedTask(null);
       return;
     }
 
-    if (draggedTask.status === targetStatus) {
+    /**
+     * Retrouve la tâche.
+     */
+    const task = items.find(
+      (item) =>
+        item.id === taskId
+    );
+
+    if (!task) {
+      setDraggedTask(null);
+      return;
+    }
+
+    const currentStatus =
+      (task.status as TaskStatus) ??
+      'todo';
+
+    /**
+     * Même colonne => rien à faire.
+     */
+    if (
+      currentStatus ===
+      targetStatus
+    ) {
       setDraggedTask(null);
       return;
     }
 
     try {
-      await mutate(() =>
-        itemsApi.updateStatus(
-          draggedTask.id,
-          targetStatus
-        )
+      /**
+       * Mise à jour côté backend.
+       */
+      await itemsApi.updateStatus(
+        taskId,
+        targetStatus
+      );
+
+      /**
+       * Mise à jour immédiate côté frontend.
+       */
+      setItems(
+        (currentItems) =>
+          currentItems.map(
+            (item) =>
+              item.id === taskId
+                ? {
+                    ...item,
+                    status:
+                      targetStatus,
+                  }
+                : item
+          )
       );
     } catch (cause) {
       console.error(
@@ -273,29 +571,51 @@ export default function TodosPage() {
   };
 
   /**
-   * Supprime une tâche.
+   * ============================
+   * Delete
+   * ============================
    */
-  const handleDeleteItem = (id: string) => {
-    void mutate(() =>
-      itemsApi.remove(id)
-    );
+
+  const handleDeleteItem = (
+    id: string
+  ) => {
+    void mutate(async () => {
+      await itemsApi.remove(id);
+
+      /**
+       * Supprime également la tâche
+       * localement.
+       */
+      setItems(
+        (currentItems) =>
+          currentItems.filter(
+            (item) =>
+              item.id !== id
+          )
+      );
+    });
   };
 
   /**
-   * Change le statut via la checkbox.
+   * ============================
+   * Checkbox / Completed
+   * ============================
    */
+
   const handleCheckboxChange = (
     id: string
   ) => {
     const item = items.find(
-      (item) => item.id === id
+      (item) =>
+        item.id === id
     );
 
     if (!item) {
       return;
     }
 
-    const newCompleted = !item.completed;
+    const newCompleted =
+      !item.completed;
 
     const newStatus: TaskStatus =
       newCompleted
@@ -312,18 +632,42 @@ export default function TodosPage() {
         item.id,
         newStatus
       );
+
+      setItems(
+        (currentItems) =>
+          currentItems.map(
+            (currentItem) =>
+              currentItem.id === id
+                ? {
+                    ...currentItem,
+                    completed:
+                      newCompleted,
+                    status:
+                      newStatus,
+                  }
+                : currentItem
+          )
+      );
     });
   };
 
   /**
-   * Après création d'un projet :
-   * - refresh des tâches
-   * - refresh des projets
+   * ============================
+   * Project created
+   * ============================
    */
-  const handleProjectCreated = () => {
-    void refresh();
-    void loadProjects();
-  };
+
+  const handleProjectCreated =
+    () => {
+      void refresh();
+      void loadProjects();
+    };
+
+  /**
+   * ============================
+   * Render
+   * ============================
+   */
 
   return (
     <Box
@@ -349,7 +693,8 @@ export default function TodosPage() {
               xs: 'stretch',
               md: 'center',
             },
-            justifyContent: 'space-between',
+            justifyContent:
+              'space-between',
             gap: 2,
             mb: 3,
             flexDirection: {
@@ -391,7 +736,9 @@ export default function TodosPage() {
             </Button>
 
             <Button
-              onClick={handleOpenProject}
+              onClick={
+                handleOpenProject
+              }
               variant="outlined"
               startIcon={<AddIcon />}
             >
@@ -403,8 +750,12 @@ export default function TodosPage() {
         {/* Modals */}
         <AddProject
           open={openProject}
-          handleClose={handleCloseProject}
-          onCreated={handleProjectCreated}
+          handleClose={
+            handleCloseProject
+          }
+          onCreated={
+            handleProjectCreated
+          }
         />
 
         <AddItem
@@ -419,7 +770,9 @@ export default function TodosPage() {
           <Alert
             severity="error"
             action={
-              <Button onClick={refresh}>
+              <Button
+                onClick={refresh}
+              >
                 Retry
               </Button>
             }
@@ -434,7 +787,8 @@ export default function TodosPage() {
             severity="warning"
             sx={{ mb: 2 }}
           >
-            Impossible de charger les projets :{' '}
+            Impossible de charger les
+            projets :{' '}
             {projectsError}
           </Alert>
         )}
@@ -453,7 +807,9 @@ export default function TodosPage() {
             variant="outlined"
             value={search}
             onChange={(event) =>
-              setSearch(event.target.value)
+              setSearch(
+                event.target.value
+              )
             }
             size="small"
             sx={{
@@ -475,11 +831,11 @@ export default function TodosPage() {
 
           {(loading ||
             projectsLoading) && (
-              <CircularProgress
-                size={24}
-                aria-label="Loading"
-              />
-            )}
+            <CircularProgress
+              size={24}
+              aria-label="Loading"
+            />
+          )}
         </Box>
 
         {/* Kanban */}
@@ -492,268 +848,340 @@ export default function TodosPage() {
             pb: 2,
           }}
         >
-          {columns.map((column) => {
-            const columnTasks = tasksByStatus[column.id];
+          {columns.map(
+            (column) => {
+              const columnTasks =
+                tasksByStatus[
+                  column.id
+                ];
 
-            const isDragOver = dragOverColumn === column.id;
+              const isDragOver =
+                dragOverColumn ===
+                column.id;
 
-            const searchValue = search.trim().toLowerCase();
+              /**
+               * Tri par priorité.
+               */
+              const sortedColumnTasks =
+                [
+                  ...columnTasks,
+                ].sort((a, b) => {
+                  const priorityOrder: Record<
+                    string,
+                    number
+                  > = {
+                    high: 0,
+                    medium: 1,
+                    low: 2,
+                  };
 
-            const filteredColumnTasks = columnTasks.filter((task) => {
-              if (!searchValue) {
-                return true;
-              }
+                  return (
+                    (priorityOrder[
+                      a.priorisation
+                    ] ?? 3) -
+                    (priorityOrder[
+                      b.priorisation
+                    ] ?? 3)
+                  );
+                });
 
-              return task.name?.toLowerCase().includes(searchValue);
-            });
-
-            const sortedColumnTasks = [...filteredColumnTasks].sort(
-              (a, b) => {
-                const priorityOrder: Record<string, number> = {
-                  high: 0,
-                  medium: 1,
-                  low: 2,
-                };
-
-                return (
-                  (priorityOrder[a.priorisation] ?? 3) -
-                  (priorityOrder[b.priorisation] ?? 3)
-                );
-              }
-            );
-
-
-            return (
-              <Paper
-                key={column.id}
-                elevation={0}
-                onDragOver={(event) =>
-                  handleDragOver(event, column.id)
-                }
-                onDragLeave={handleDragLeave}
-                onDrop={(event) =>
-                  void handleDrop(event, column.id)
-                }
-                sx={{
-                  flex: '1 1 0',
-                  minWidth: 320,
-                  maxWidth: 520,
-                  minHeight: 550,
-                  p: 1.5,
-                  borderRadius: 2,
-                  border: '1px solid',
-                  borderColor: isDragOver
-                    ? 'primary.main'
-                    : 'divider',
-                  backgroundColor: isDragOver
-                    ? 'action.hover'
-                    : 'background.default',
-                  transition:
-                    'border-color 0.15s, background-color 0.15s',
-                }}
-              >
-                {/* Column header */}
-                <Box
+              return (
+                <Paper
+                  key={column.id}
+                  elevation={0}
+                  onDragOver={(
+                    event
+                  ) =>
+                    handleDragOver(
+                      event,
+                      column.id
+                    )
+                  }
+                  onDragLeave={
+                    handleDragLeave
+                  }
+                  onDrop={(event) =>
+                    void handleDrop(
+                      event,
+                      column.id
+                    )
+                  }
                   sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    mb: 1.5,
-                    px: 0.5,
+                    flex: '1 1 0',
+                    minWidth: 320,
+                    maxWidth: 520,
+                    minHeight: 550,
+                    p: 1.5,
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor:
+                      isDragOver
+                        ? 'primary.main'
+                        : 'divider',
+                    backgroundColor:
+                      isDragOver
+                        ? 'action.hover'
+                        : 'background.default',
+                    transition:
+                      'border-color 0.15s, background-color 0.15s',
                   }}
                 >
-                  <Typography
-                    variant="subtitle1"
-                    fontWeight={700}
+                  {/* Column header */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems:
+                        'center',
+                      justifyContent:
+                        'space-between',
+                      mb: 1.5,
+                      px: 0.5,
+                    }}
                   >
-                    {column.title}
-                  </Typography>
-
-                  <Chip
-                    size="small"
-                    label={columnTasks.length}
-                  />
-                </Box>
-
-                {/* Cards */}
-                <Stack spacing={1.5}>
-                  {sortedColumnTasks.map((row) => (
-                    <Card
-                      key={row.id}
-                      draggable
-                      onDragStart={(event) =>
-                        handleDragStart(event, {
-                          id: row.id,
-                          status:
-                            (row.status as TaskStatus) ??
-                            'todo',
-                        })
-                      }
-                      onDragEnd={handleDragEnd}
-                      sx={{
-                        cursor: 'grab',
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                        transition:
-                          'box-shadow 0.15s, transform 0.15s',
-                        '&:hover': {
-                          boxShadow: 3,
-                        },
-                        '&:active': {
-                          cursor: 'grabbing',
-                        },
-                        opacity:
-                          draggedTask?.id === row.id
-                            ? 0.5
-                            : 1,
-                      }}
+                    <Typography
+                      variant="subtitle1"
+                      fontWeight={700}
                     >
-                      <CardContent
+                      {
+                        column.title
+                      }
+                    </Typography>
+
+                    <Chip
+                      size="small"
+                      label={
+                        columnTasks.length
+                      }
+                    />
+                  </Box>
+
+                  {/* Cards */}
+                  <Stack
+                    spacing={1.5}
+                  >
+                    {sortedColumnTasks.map(
+                      (row) => (
+                        <Card
+                          key={row.id}
+                          draggable
+                          onDragStart={(
+                            event
+                          ) =>
+                            handleDragStart(
+                              event,
+                              {
+                                id: row.id,
+                                status:
+                                  (row.status as TaskStatus) ??
+                                  'todo',
+                              }
+                            )
+                          }
+                          onDragEnd={
+                            handleDragEnd
+                          }
+                          sx={{
+                            cursor:
+                              'grab',
+                            border:
+                              '1px solid',
+                            borderColor:
+                              'divider',
+                            borderRadius: 2,
+                            transition:
+                              'box-shadow 0.15s, transform 0.15s',
+                            '&:hover': {
+                              boxShadow: 3,
+                            },
+                            '&:active': {
+                              cursor:
+                                'grabbing',
+                            },
+                            opacity:
+                              draggedTask?.id ===
+                              row.id
+                                ? 0.5
+                                : 1,
+                          }}
+                        >
+                          <CardContent
+                            sx={{
+                              '&:last-child':
+                                {
+                                  pb: 2,
+                                },
+                            }}
+                          >
+                            {/* Task name + delete */}
+                            <Box
+                              sx={{
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'flex-start',
+                                justifyContent:
+                                  'space-between',
+                                gap: 1,
+                              }}
+                            >
+                              <Typography
+                                variant="subtitle2"
+                                fontWeight={
+                                  600
+                                }
+                                sx={{
+                                  wordBreak:
+                                    'break-word',
+                                }}
+                              >
+                                {row.name ||
+                                  'Untitled task'}
+                              </Typography>
+
+                              <IconButton
+                                size="small"
+                                disabled={
+                                  loading ||
+                                  pending
+                                }
+                                aria-label={`Delete ${row.name}`}
+                                onClick={() =>
+                                  handleDeleteItem(
+                                    row.id
+                                  )
+                                }
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+
+                            {/* Project */}
+                            <Tooltip title="Project">
+                              <Typography
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{
+                                  mt: 1,
+                                  mb: 1,
+                                  display:
+                                    'inline-block',
+                                }}
+                              >
+                                {getProjectName(
+                                  row.projectId
+                                )}
+                              </Typography>
+                            </Tooltip>
+
+                            {/* Metadata */}
+                            <Box
+                              sx={{
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                gap: 1,
+                                flexWrap:
+                                  'wrap',
+                              }}
+                            >
+                              {/* Priority */}
+                              <Tooltip title="Priorisation">
+                                <Chip
+                                  size="medium"
+                                  label={
+                                    row.priorisation
+                                  }
+                                  color={
+                                    row.priorisation ===
+                                    'high'
+                                      ? 'error'
+                                      : row.priorisation ===
+                                        'medium'
+                                      ? 'warning'
+                                      : 'success'
+                                  }
+                                />
+                              </Tooltip>
+
+                              {/* Deadline */}
+                              <Tooltip title="Deadline">
+                                <Chip
+                                  size="medium"
+                                  variant="outlined"
+                                  label={
+                                    row.deadline
+                                      ? new Date(
+                                          row.deadline
+                                        ).toLocaleDateString(
+                                          'fr-FR'
+                                        )
+                                      : 'No deadline'
+                                  }
+                                />
+                              </Tooltip>
+
+                              {/* User email */}
+                              <Tooltip title="User email">
+                                <Chip
+                                  size="medium"
+                                  variant="outlined"
+                                  label={
+                                    row.userId
+                                      ? userEmails[
+                                          row.userId
+                                        ] ??
+                                        'Loading...'
+                                      : 'Unknown user'
+                                  }
+                                />
+                              </Tooltip>
+                            </Box>
+                          </CardContent>
+                        </Card>
+                      )
+                    )}
+
+                    {/* Empty column */}
+                    {columnTasks.length ===
+                      0 && (
+                      <Box
                         sx={{
-                          '&:last-child': {
-                            pb: 2,
-                          },
+                          minHeight: 120,
+                          border:
+                            '1px dashed',
+                          borderColor:
+                            isDragOver
+                              ? 'primary.main'
+                              : 'divider',
+                          borderRadius: 2,
+                          display:
+                            'flex',
+                          alignItems:
+                            'center',
+                          justifyContent:
+                            'center',
+                          p: 2,
                         }}
                       >
-                        {/* Task name + delete */}
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
-                            justifyContent: 'space-between',
-                            gap: 1,
-                          }}
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          textAlign="center"
                         >
-                          <Typography
-                            variant="subtitle2"
-                            fontWeight={600}
-                            sx={{
-                              wordBreak: 'break-word',
-                            }}
-                          >
-                            {row.name ||
-                              'Untitled task'}
-                          </Typography>
-
-                          <IconButton
-                            size="small"
-                            disabled={
-                              loading || pending
-                            }
-                            aria-label={`Delete ${row.name}`}
-                            onClick={() =>
-                              handleDeleteItem(
-                                row.id
-                              )
-                            }
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-
-                        {/* Project */}
-                        <Tooltip title="Project">
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{
-                              mt: 1,
-                              mb: 1,
-                              display: 'inline-block',
-                            }}
-                          >
-                            {getProjectName(
-                              row.projectId
-                            )}
-                          </Typography>
-                        </Tooltip>
-
-                        {/* Metadata */}
-                        <Box
-                          sx={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <Tooltip title="Priorisation">
-                            <Chip
-                              size="medium"
-                              label={row.priorisation}
-                              color={
-                                row.priorisation ===
-                                  'high'
-                                  ? 'error'
-                                  : row.priorisation ===
-                                    'medium'
-                                    ? 'warning'
-                                    : 'success'
-                              }
-                            />
-                          </Tooltip>
-
-                          <Tooltip title="Deadline">
-                            <Chip
-                              size="medium"
-                              variant="outlined"
-                              label={
-                                row.deadline
-                                  ? new Date(
-                                    row.deadline
-                                  ).toLocaleDateString(
-                                    'fr-FR'
-                                  )
-                                  : 'No deadline'
-                              }
-                            />
-                          </Tooltip>
-
-                          <Tooltip title="User email">
-                            <Chip
-                              size="medium"
-                              variant="outlined"
-                              label={row.userId}
-                            />
-                          </Tooltip>
-
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  ))}
-
-                  {/* Empty column */}
-                  {columnTasks.length === 0 && (
-                    <Box
-                      sx={{
-                        minHeight: 120,
-                        border: '1px dashed',
-                        borderColor: isDragOver
-                          ? 'primary.main'
-                          : 'divider',
-                        borderRadius: 2,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        p: 2,
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        textAlign="center"
-                      >
-                        Drop a task here
-                      </Typography>
-                    </Box>
-                  )}
-                </Stack>
-              </Paper>
-            );
-          })}
+                          Drop a task
+                          here
+                        </Typography>
+                      </Box>
+                    )}
+                  </Stack>
+                </Paper>
+              );
+            }
+          )}
         </Box>
 
+        {/* Projects */}
         <Box>
           <Typography
             variant="subtitle1"
@@ -764,9 +1192,12 @@ export default function TodosPage() {
           >
             Your Projects
           </Typography>
+
           <ProjectTable
             projects={projects}
-            onUpdated={loadProjects}
+            onUpdated={
+              loadProjects
+            }
           />
         </Box>
 

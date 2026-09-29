@@ -19,6 +19,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 
@@ -27,6 +28,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import PersonAddIcon from '@mui/icons-material/PersonAdd';
 
 import { projectsApi } from '../api/projectApi';
+import { useAuth } from '../../auth/AuthProvider';
 
 export type Project = {
   id: string;
@@ -47,7 +49,7 @@ export default function ProjectTable({
 }: ProjectTableProps) {
   const [selectedProject, setSelectedProject] =
     useState<Project | null>(null);
-
+  const { user } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -63,6 +65,14 @@ export default function ProjectTable({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  /*
+   * ID de l'utilisateur actuellement connecté.
+   *
+   * Adapte cette ligne selon la manière dont ton application
+   * récupère l'utilisateur connecté.
+   */
+  const currentUserId = user?.id;
 
   /**
    * Ouvre le modal de modification
@@ -378,88 +388,127 @@ export default function ProjectTable({
                 </TableCell>
               </TableRow>
             ) : (
-              projects.map((project) => (
-                <TableRow
-                  key={project.id}
-                  hover
-                >
-                  {/* NOM */}
-                  <TableCell>
-                    <Typography
-                      fontWeight={600}
-                    >
-                      {project.name}
-                    </Typography>
-                  </TableCell>
+              projects.map((project) => {
+                /*
+                 * Seul le créateur du projet peut
+                 * le modifier ou le supprimer.
+                 */
+                const isProjectCreator =
+                  project.userId === currentUserId;
 
-                  {/* UTILISATEURS */}
-                  <TableCell>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        gap: 0.75,
-                      }}
-                    >
-                      {project.usersEmail?.length ? (
-                        project.usersEmail.map(
-                          (userEmail) => (
-                            <Chip
-                              key={userEmail}
-                              label={userEmail}
-                              size="small"
-                            />
-                          ),
-                        )
-                      ) : (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                        >
-                          Aucun utilisateur
-                        </Typography>
+                return (
+                  <TableRow
+                    key={project.id}
+                    hover
+                  >
+                    {/* NOM */}
+                    <TableCell>
+                      <Typography
+                        fontWeight={600}
+                      >
+                        {project.name}
+                      </Typography>
+                    </TableCell>
+
+                    {/* UTILISATEURS */}
+                    <TableCell>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 0.75,
+                        }}
+                      >
+                        {project.usersEmail?.length ? (
+                          project.usersEmail.map(
+                            (userEmail) => (
+                              <Chip
+                                key={userEmail}
+                                label={userEmail}
+                                size="small"
+                              />
+                            ),
+                          )
+                        ) : (
+                          <Typography
+                            variant="body2"
+                            color="text.secondary"
+                          >
+                            Aucun utilisateur
+                          </Typography>
+                        )}
+                      </Box>
+                    </TableCell>
+
+                    {/* DATE */}
+                    <TableCell>
+                      {new Date(
+                        project.createdAt,
+                      ).toLocaleDateString(
+                        'fr-FR',
+                        {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                        },
                       )}
-                    </Box>
-                  </TableCell>
+                    </TableCell>
 
-                  {/* DATE */}
-                  <TableCell>
-                    {new Date(
-                      project.createdAt,
-                    ).toLocaleDateString(
-                      'fr-FR',
-                      {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric',
-                      },
-                    )}
-                  </TableCell>
+                    {/* ACTIONS */}
+                    <TableCell align="right">
+                      {/* MODIFIER */}
+                      <Tooltip
+                        title={
+                          isProjectCreator
+                            ? 'Modifier le projet'
+                            : 'Seul le créateur du projet peut le modifier'
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            color="primary"
+                            onClick={() =>
+                              handleOpenEdit(
+                                project,
+                              )
+                            }
+                            disabled={
+                              !isProjectCreator
+                            }
+                          >
+                            <EditIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
 
-                  {/* ACTIONS */}
-                  <TableCell align="right">
-                    <IconButton
-                      color="primary"
-                      onClick={() =>
-                        handleOpenEdit(project)
-                      }
-                      title="Modifier"
-                    >
-                      <EditIcon />
-                    </IconButton>
-
-                    <IconButton
-                      color="error"
-                      onClick={() =>
-                        handleOpenDelete(project)
-                      }
-                      title="Supprimer"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))
+                      {/* SUPPRIMER */}
+                      <Tooltip
+                        title={
+                          isProjectCreator
+                            ? 'Supprimer le projet'
+                            : 'Seul le créateur du projet peut le supprimer'
+                        }
+                      >
+                        <span>
+                          <IconButton
+                            color="error"
+                            onClick={() =>
+                              handleOpenDelete(
+                                project,
+                              )
+                            }
+                            disabled={
+                              !isProjectCreator
+                            }
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

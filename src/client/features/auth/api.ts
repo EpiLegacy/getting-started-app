@@ -2,11 +2,47 @@ import type { User, UserProfile } from '../../../modules/auth/types';
 import { request } from '../../lib/http';
 
 export const authApi = {
-    profile: (signal?: AbortSignal) => request<{ user: UserProfile }>('/auth/profile', { signal }),
-    deleteAccount: (password: string) => request<void>('/auth/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
-    me: () => request<{ user: User }>('/auth/me'),
-    signIn: (mode: 'login' | 'register', email: string, password: string) =>
-        request<{ user: User }>(`/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email, password }) }),
-    logout: () => request<void>('/auth/logout', { method: 'POST' }),
-    findByEmail: (email: string) => request<{ user: User }>(`/auth/users/${encodeURIComponent(email)}`, { method: 'GET', },),
+    profile: (signal?: AbortSignal) =>
+        request<{ user: UserProfile }>('/auth/profile', { signal }),
+
+    deleteAccount: (password: string) =>
+        request<void>('/auth/me', {
+            method: 'DELETE',
+            body: JSON.stringify({ password }),
+        }),
+
+    me: () =>
+        request<{ user: User }>('/auth/me'),
+
+    signIn: (
+        mode: 'login' | 'register',
+        email: string,
+        password: string,
+    ) =>
+        request<{ user: User }>(`/auth/${mode}`, {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+        }),
+
+    logout: () =>
+        request<void>('/auth/logout', {
+            method: 'POST',
+        }),
+
+    findByEmail: (email: string) =>
+        request<{ user: User }>(
+            `/auth/users/${encodeURIComponent(email)}`,
+            {
+                method: 'GET',
+            },
+        ),
+
+    // Récupérer un utilisateur à partir de son ID
+    findById: (id: string) =>
+        request<{ user: User }>(
+            `/auth/users/id/${encodeURIComponent(id)}`,
+            {
+                method: 'GET',
+            },
+        ),
 };
