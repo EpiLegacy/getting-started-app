@@ -1,4 +1,4 @@
-import type { Item, Priority } from '../../types';
+import type { Item, Priority, TaskStatus } from '../../types';
 
 /** Public id is the stable task_key, not the non-unique legacy id column. */
 export interface Task extends Item {
@@ -14,6 +14,7 @@ export interface TaskForUser {
     deadline: string | null;
     priorisation: Priority | null;
     projectName: string;
+    status?: TaskStatus;
 }
 
 export type TaskInput = Omit<Item, 'id'>;

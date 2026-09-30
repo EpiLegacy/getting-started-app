@@ -29,7 +29,7 @@ function currentUser(res: Response): { id: string } {
 }
 
 function sendServiceError(
-    res: any,
+    res: Response,
     error: string,
 ) {
     switch (error) {

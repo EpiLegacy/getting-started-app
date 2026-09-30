@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, lte, ne, notInArray } from 'drizzle-orm';
+import { and, asc, eq, gt, lte, ne, notInArray } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
 import { projectItems, projectMembers, projects, sessions, todoItems, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';

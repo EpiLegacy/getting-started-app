@@ -59,15 +59,6 @@ export function createProjectService(
         return repository.findForMember(projectId, userId);
     }
 
-    async function isProjectMember(
-        projectId: string,
-        userId: string,
-    ): Promise<boolean> {
-        const members = await repository.listMembers(projectId);
-
-        return members.some(member => member.id === userId);
-    }
-
     return {
         async list(userId: string): Promise<ProjectListDto[]> {
             const projects = await repository.listForUser(userId);

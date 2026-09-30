@@ -1,6 +1,5 @@
 import {
   Add as AddIcon,
-  Delete,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 
@@ -38,8 +37,9 @@ import AddProject from '../features/todos/components/AddProject';
 import AddItem from '../features/todos/components/AddItem';
 import { useTasks } from '../features/todos/useTasks';
 import { Project, projectApi } from '../features/todos/api/projectApi';
-import { TaskStatus } from '../../types';
+import { Item, TaskStatus } from '../../types';
 import { itemsApi } from '../features/todos/api/itemsApi';
+import { TaskForUser } from '../../modules/tasks/types';
 
 const kanbanColumns: {
   id: TaskStatus;
@@ -239,12 +239,12 @@ export default function TodosPage() {
     });
   }, [itemsForUser, search, sortDirection, taskStatuses, projects, items]);
 
-  const getTaskStatus = (item: any): TaskStatus => {
-    if (item.status === 'inProgress' || item.status === 'in_progress') {
+  const getTaskStatus = (item: TaskForUser): TaskStatus => {
+    if (item.status === 'inProgress') {
       return 'inProgress';
     }
 
-    if (item.status === 'completed' || item.status === 'done') {
+    if (item.status === 'completed') {
       return 'completed';
     }
 
@@ -252,7 +252,7 @@ export default function TodosPage() {
       return 'todo';
     }
 
-    return item.completed ? 'completed' : 'todo';
+    return 'todo';
   };
 
   const getUserEmail = (userId: string | null | undefined) => {
