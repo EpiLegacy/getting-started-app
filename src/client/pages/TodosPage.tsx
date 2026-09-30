@@ -177,6 +177,7 @@ export default function TodosPage() {
             project.id !== projectId,
         ),
       );
+      refresh();
 
       if (
         memberProject?.id === projectId

@@ -27,16 +27,11 @@ export default function AddItem({
 }: AddItemProps) {
   const [name, setName] = useState('');
   const [deadline, setDeadline] = useState('');
-  const [priorisation, setPriorisation] =
-    useState<Priority>('medium');
-
+  const [priorisation, setPriorisation] = useState<Priority>('medium');
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [assigneeId, setAssigneeId] = useState('');
-
-  const [projectsLoading, setProjectsLoading] =
-    useState(false);
-
+  const [projectsLoading, setProjectsLoading] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -57,8 +52,7 @@ export default function AddItem({
         setProjectsLoading(true);
         setError('');
 
-        const result =
-          await projectApi.list();
+        const result = await projectApi.list();
 
         if (cancelled) {
           return;
@@ -165,6 +159,7 @@ export default function AddItem({
         name,
         deadline,
         priorisation,
+        status: "todo",
       });
 
       await projectApi.addItem(
