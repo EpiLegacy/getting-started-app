@@ -37,7 +37,7 @@ import AddProject from '../features/todos/components/AddProject';
 import AddItem from '../features/todos/components/AddItem';
 import { useTasks } from '../features/todos/useTasks';
 import { Project, projectApi } from '../features/todos/api/projectApi';
-import { Item, TaskStatus } from '../../types';
+import { TaskStatus } from '../../types';
 import { itemsApi } from '../features/todos/api/itemsApi';
 import { TaskForUser } from '../../modules/tasks/types';
 
