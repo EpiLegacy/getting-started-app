@@ -1,3 +1,4 @@
+import { relations, sql } from 'drizzle-orm';
 import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryKey, unique, varchar } from 'drizzle-orm/mysql-core';
 import { Priority } from '../../types';
 
@@ -97,3 +98,74 @@ export const sessions = mysqlTable(
     },
     table => [index('idx_sessions_user').on(table.userId)],
 );
+
+/**
+ * Projects. Users and items are linked through join tables (many-to-many).
+ * Items are referenced by taskKey, the only guaranteed-unique key of
+ * todo_items (the legacy id can be NULL or duplicated).
+ * The account deletion code hands ownership over before deleting a user.
+ */
+export const projects = mysqlTable('projects', {
+    id: char('id', { length: 36 }).notNull().primaryKey(),
+    ownerId: char('owner_id', { length: 36 })
+        .notNull()
+        .references(() => users.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    createdAt: datetime('created_at', { fsp: 3 }).notNull(),
+});
+
+export const projectMembers = mysqlTable(
+    'project_members',
+    {
+        projectId: char('project_id', { length: 36 })
+            .notNull()
+            .references(() => projects.id, { onDelete: 'cascade' }),
+        userId: char('user_id', { length: 36 })
+            .notNull()
+            .references(() => users.id, { onDelete: 'cascade' }),
+        joinedAt: datetime('joined_at', { fsp: 3 }).notNull().default(sql`CURRENT_TIMESTAMP(3)`),
+    },
+    table => [
+        primaryKey({ columns: [table.projectId, table.userId] }),
+        index('idx_project_members_user').on(table.userId),
+    ],
+);
+
+export const projectItems = mysqlTable(
+    'project_items',
+    {
+        projectId: char('project_id', { length: 36 })
+            .notNull()
+            .references(() => projects.id, { onDelete: 'cascade' }),
+        taskKey: int('task_key', { unsigned: true })
+            .notNull()
+            .references(() => todoItems.taskKey, { onDelete: 'cascade' }),
+    },
+    table => [
+        primaryKey({ columns: [table.projectId, table.taskKey] }),
+        index('idx_project_items_task').on(table.taskKey),
+    ],
+);
+
+export const projectsRelations = relations(projects, ({ many }) => ({
+    members: many(projectMembers),
+    items: many(projectItems),
+}));
+
+export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
+    project: one(projects, { fields: [projectMembers.projectId], references: [projects.id] }),
+    user: one(users, { fields: [projectMembers.userId], references: [users.id] }),
+}));
+
+export const projectItemsRelations = relations(projectItems, ({ one }) => ({
+    project: one(projects, { fields: [projectItems.projectId], references: [projects.id] }),
+    item: one(todoItems, { fields: [projectItems.taskKey], references: [todoItems.taskKey] }),
+}));
+
+export const usersRelations = relations(users, ({ many }) => ({
+    projects: many(projectMembers),
+}));
+
+export const todoItemsRelations = relations(todoItems, ({ many }) => ({
+    projects: many(projectItems),
+}));

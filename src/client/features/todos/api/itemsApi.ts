@@ -1,5 +1,5 @@
 import type { Item } from '../../../../types';
-import type { Task } from '../../../../modules/tasks/types';
+import type { Task, TaskForUser } from '../../../../modules/tasks/types';
 import { request } from '../../../lib/http';
 
 export const itemsApi = {
@@ -15,4 +15,5 @@ export const itemsApi = {
   }),
   remove: (id: string) => request<void>(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   claim: (id: string) => request<void>(`/items/${encodeURIComponent(id)}/claim`, { method: 'POST' }),
+  getForUser: (signal?: AbortSignal) => request<TaskForUser[]>('/items/forUser', { signal }),
 };

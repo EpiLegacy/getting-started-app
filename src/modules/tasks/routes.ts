@@ -81,5 +81,8 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
         }
         res.status(204).end();
     });
+    router.get('/forUser', async (_req, res) => {
+        res.json(await repository.listForUser(currentUser(res).id));
+    });
     return router;
 }
