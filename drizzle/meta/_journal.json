@@ -36,6 +36,13 @@
       "when": 1790767794835,
       "tag": "0004_lazy_mesmero",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790773955322,
+      "tag": "0005_clear_supernaut",
+      "breakpoints": true
     }
   ]
 }

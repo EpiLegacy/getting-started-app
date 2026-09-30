@@ -1,5 +1,6 @@
 import {
   Add as AddIcon,
+  Delete,
   Delete as DeleteIcon,
 } from '@mui/icons-material';
 
@@ -13,6 +14,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   Paper,
   Table,
   TableBody,
@@ -271,12 +273,22 @@ export default function TodosPage() {
     return null;
   };
 
+  const handleDeleteItem = async (id: string) => {
+    try {
+      await itemsApi.remove(id);
+
+      refresh();
+    } catch (error) {
+      console.error('Failed to delete item:', error);
+    }
+  };
+
   const handleDragStart = (
     event: React.DragEvent<HTMLDivElement>,
     taskKey: number,
   ) => {
     const key = String(taskKey);
-  
+
     setDraggedTaskId(key);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', key);
@@ -569,16 +581,39 @@ export default function TodosPage() {
                               },
                             }}
                           >
-                            <Typography
-                              variant="subtitle2"
-                              fontWeight={700}
+                            <Box
                               sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
                                 mb: 0.5,
-                                wordBreak: 'break-word',
                               }}
                             >
-                              {item.name}
-                            </Typography>
+                              <Typography
+                                variant="subtitle2"
+                                fontWeight={700}
+                                sx={{
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {item.name}
+                              </Typography>
+
+                              <IconButton
+                                size="small"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteItem(String(item.taskKey));
+                                }}
+                                sx={{
+                                  ml: 1,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
+
                             <Typography
                               variant="body2"
                               sx={{
@@ -635,7 +670,7 @@ export default function TodosPage() {
                                       </Avatar>
                                     ) : undefined
                                   }
-                                  label={getUserEmail(item.userId)}
+                                  label={getUserEmail(item.userId) ?? item.userId ?? "compte supprimer"}
                                 />
                               </Tooltip>
                             </Box>

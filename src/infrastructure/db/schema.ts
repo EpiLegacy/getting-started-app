@@ -9,7 +9,7 @@ import { Priority, TaskStatus } from '../../types';
  */
 export const todoItems = mysqlTable('todo_items', {
     taskKey: int('task_key', { unsigned: true }).autoincrement().primaryKey(),
-    userId: char('user_id', { length: 36 }).references(() => users.id, { onDelete: 'restrict' }),
+    userId: char('user_id', { length: 36 }),
     id: varchar('id', { length: 36 }),
     name: varchar('name', { length: 255 }),
     completed: boolean('completed'),

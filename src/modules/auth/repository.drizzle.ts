@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, lte, ne } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lte, ne, notInArray } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
 import { projectItems, projectMembers, projects, sessions, todoItems, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';
@@ -32,41 +32,56 @@ export const drizzleAuthRepository: AuthRepository = {
 
     async deleteAccount(id) {
         await transaction(async tx => {
-            // Lock the parent first. Concurrent task creations/claims and new
-            // sessions must finish before this lock or fail their foreign key
-            // after deletion; they cannot leave an owned row behind.
-            const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, id)).for('update');
+            const [user] = await tx
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.id, id))
+                .for('update');
+
             if (!user) return;
 
-            // 1. Projects owned by the user: hand over to the longest-standing
-            //    other member, or delete the project when nobody else is in it.
-            const owned = await tx.select({ id: projects.id }).from(projects).where(eq(projects.ownerId, id));
+            const owned = await tx
+                .select({ id: projects.id })
+                .from(projects)
+                .where(eq(projects.ownerId, id));
+
             for (const { id: projectId } of owned) {
                 const [next] = await tx
                     .select({ userId: projectMembers.userId })
                     .from(projectMembers)
-                    .where(and(eq(projectMembers.projectId, projectId), ne(projectMembers.userId, id)))
+                    .where(
+                        and(
+                            eq(projectMembers.projectId, projectId),
+                            ne(projectMembers.userId, id),
+                        ),
+                    )
                     .orderBy(asc(projectMembers.joinedAt))
                     .limit(1);
+
                 if (next) {
-                    await tx.update(projects).set({ ownerId: next.userId }).where(eq(projects.id, projectId));
+                    await tx
+                        .update(projects)
+                        .set({ ownerId: next.userId })
+                        .where(eq(projects.id, projectId));
                 } else {
-                    await tx.delete(projects).where(eq(projects.id, projectId)); // its links cascade
+                    await tx.delete(projects).where(eq(projects.id, projectId));
                 }
             }
 
-            // 2. Every task of the user that is in a project survives, without
-            //    an author, whether or not the user owned that project.
-            const inProject = tx.select({ taskKey: projectItems.taskKey }).from(projectItems);
-            await tx
-                .update(todoItems)
-                .set({ userId: null })
-                .where(and(eq(todoItems.userId, id), inArray(todoItems.taskKey, inProject)));
+            const inProject = tx
+                .select({ taskKey: projectItems.taskKey })
+                .from(projectItems);
 
-            // 3. Everything else the user still owns is deleted, as before.
-            await tx.delete(todoItems).where(eq(todoItems.userId, id));
+            await tx
+                .delete(todoItems)
+                .where(
+                    and(
+                        eq(todoItems.userId, id),
+                        notInArray(todoItems.taskKey, inProject),
+                    ),
+                );
+
             await tx.delete(users).where(eq(users.id, id));
-            // Sessions and project memberships go with the ON DELETE CASCADE FKs.
         });
     },
 
