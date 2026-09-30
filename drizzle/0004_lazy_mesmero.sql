@@ -1,0 +1,1 @@
+ALTER TABLE `todo_items` ADD `status` varchar(20) DEFAULT 'todo' NOT NULL;

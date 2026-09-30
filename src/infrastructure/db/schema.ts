@@ -1,6 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import { bigint, boolean, char, datetime, index, int, json, mysqlTable, primaryKey, unique, varchar } from 'drizzle-orm/mysql-core';
-import { Priority } from '../../types';
+import { Priority, TaskStatus } from '../../types';
 
 /**
  * Legacy fields remain nullable and unchanged. taskKey uniquely identifies
@@ -15,6 +15,10 @@ export const todoItems = mysqlTable('todo_items', {
     completed: boolean('completed'),
     deadline: varchar('deadline', { length: 255 }),
     priorisation: varchar('priorisation', { length: 255 }).$type<Priority>(),
+    status: varchar('status', { length: 20 })
+            .$type<TaskStatus>()
+            .notNull()
+            .default('todo'),
 }, table => [index('idx_todo_items_user').on(table.userId, table.taskKey)]);
 
 export const outboxEvents = mysqlTable(

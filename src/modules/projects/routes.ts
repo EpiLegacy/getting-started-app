@@ -67,8 +67,6 @@ export function createProjectsRouter(
     const router = Router();
 
     if (!authService) {
-        console.log("IN IF");
-        
         router.use((_req, res) => {
             res.status(503).json({ error: 'auth_unavailable', message: 'Authentication needs MySQL: set MYSQL_HOST.' });
         });

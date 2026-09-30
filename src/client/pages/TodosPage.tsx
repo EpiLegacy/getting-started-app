@@ -36,16 +36,16 @@ import AddProject from '../features/todos/components/AddProject';
 import AddItem from '../features/todos/components/AddItem';
 import { useTasks } from '../features/todos/useTasks';
 import { Project, projectApi } from '../features/todos/api/projectApi';
-
-type KanbanStatus = 'todo' | 'inProgress' | 'completed';
+import { TaskStatus } from '../../types';
+import { itemsApi } from '../features/todos/api/itemsApi';
 
 const kanbanColumns: {
-  id: KanbanStatus;
+  id: TaskStatus;
   title: string;
 }[] = [
-    { id: 'todo', title: 'À faire' },
-    { id: 'inProgress', title: 'En cours' },
-    { id: 'completed', title: 'Terminé' },
+    { id: 'todo', title: 'Todo' },
+    { id: 'inProgress', title: 'In progress' },
+    { id: 'completed', title: 'Completed' },
   ];
 
 export default function TodosPage() {
@@ -69,9 +69,8 @@ export default function TodosPage() {
   const [deleteProjectLoading, setDeleteProjectLoading] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  // const [sortField, _] = 'priorisation';
   const [sortDirection, _] = useState<'asc' | 'desc'>('asc');
-  const [taskStatuses, setTaskStatuses] = useState<Record<string, KanbanStatus>>({});
+  const [taskStatuses, setTaskStatuses] = useState<Record<string, TaskStatus>>({});
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
 
   const loadProjects = async () => {
@@ -235,9 +234,9 @@ export default function TodosPage() {
 
       return 0;
     });
-  }, [items, search]);
+  }, [itemsForUser, search, sortDirection, taskStatuses, projects, items]);
 
-  const getTaskStatus = (item: any): KanbanStatus => {
+  const getTaskStatus = (item: any): TaskStatus => {
     if (item.status === 'inProgress' || item.status === 'in_progress') {
       return 'inProgress';
     }
@@ -273,11 +272,13 @@ export default function TodosPage() {
 
   const handleDragStart = (
     event: React.DragEvent<HTMLDivElement>,
-    taskId: string,
+    taskKey: number,
   ) => {
-    setDraggedTaskId(taskId);
+    const key = String(taskKey);
+  
+    setDraggedTaskId(key);
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', taskId);
+    event.dataTransfer.setData('text/plain', key);
   };
 
   const handleDragEnd = () => {
@@ -291,9 +292,9 @@ export default function TodosPage() {
     event.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = (
+  const handleDrop = async (
     event: React.DragEvent<HTMLDivElement>,
-    status: KanbanStatus,
+    status: TaskStatus,
   ) => {
     event.preventDefault();
 
@@ -305,10 +306,16 @@ export default function TodosPage() {
       return;
     }
 
-    setTaskStatuses((current) => ({
-      ...current,
-      [taskId]: status,
-    }));
+    try {
+      await itemsApi.updateStatus(taskId, status);
+
+      setTaskStatuses((current) => ({
+        ...current,
+        [taskId]: status,
+      }));
+    } catch (error) {
+      console.error('Failed to update task status:', error);
+    }
 
     setDraggedTaskId(null);
   };
@@ -454,10 +461,7 @@ export default function TodosPage() {
               {kanbanColumns.map((column) => {
                 const columnItems = filteredItems.filter(
                   (item) => {
-                    const status =
-                      taskStatuses[String(item.id)] ??
-                      getTaskStatus(item);
-
+                    const status = taskStatuses[String(item.taskKey)] ?? getTaskStatus(item);
                     return status === column.id;
                   },
                 );
@@ -537,25 +541,20 @@ export default function TodosPage() {
                             key={item.id}
                             draggable
                             elevation={0}
-                            onDragStart={(event) =>
-                              handleDragStart(
-                                event,
-                                String(item.id),
-                              )
-                            }
+                            onDragStart={(event) => handleDragStart(event, item.taskKey)}
                             onDragEnd={handleDragEnd}
                             sx={{
                               p: 1.5,
                               border: '1px solid',
                               borderColor:
-                                draggedTaskId === String(item.id)
+                                draggedTaskId === String(item.taskKey)
                                   ? 'primary.main'
                                   : 'divider',
                               borderRadius: 2,
                               cursor: 'grab',
                               backgroundColor: 'background.paper',
                               opacity:
-                                draggedTaskId === String(item.id)
+                                draggedTaskId === String(item.taskKey)
                                   ? 0.5
                                   : 1,
                               transition:

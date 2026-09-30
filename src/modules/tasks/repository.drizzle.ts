@@ -76,6 +76,7 @@ export const taskRepository: TaskRepository = {
                     completed: todoItems.completed,
                     deadline: todoItems.deadline,
                     priorisation: todoItems.priorisation,
+                    status: todoItems.status,
                     projectName: projects.name,
                 })
                 .from(projectMembers)
