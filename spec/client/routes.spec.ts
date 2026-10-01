@@ -2,6 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router';
 import App from '../../src/client/app/App';
+import { pageTitle } from '../../src/client/app/AppLayout';
 import { useAuth } from '../../src/client/features/auth/AuthProvider';
 
 jest.mock('../../src/client/features/auth/AuthProvider', () => ({
@@ -108,4 +109,37 @@ test('a session lookup failure offers retry without revealing the profile', () =
     expect(html).toContain('Sign-in is temporarily unavailable.');
     expect(html).toContain('Retry');
     expect(html).not.toContain('Account ID');
+});
+
+describe('accessibility (RGAA)', () => {
+    it('gives every route its own title', () => {
+        expect(pageTitle('/')).toBe('Home - Todo App');
+        expect(pageTitle('/todos/')).toBe('My tasks - Todo App');
+        expect(pageTitle('/accessibility')).toBe('Accessibility statement - Todo App');
+        expect(pageTitle('/missing/nested')).toBe('Page not found - Todo App');
+    });
+
+    it('links the accessibility statement and a skip link from every page', () => {
+        for (const path of ['/', '/todos', '/missing']) {
+            const html = renderRoute(path);
+            expect(html).toContain('href="/accessibility"');
+            expect(html).toContain('Accessibility: partially compliant');
+            expect(html).toContain('href="#main"');
+        }
+    });
+
+    it('renders the statement with its compliance status and remedies', () => {
+        const html = renderRoute('/accessibility');
+        expect(html).toContain('<h1');
+        expect(html).toContain('partially compliant');
+        expect(html).toContain('Défenseur des droits');
+    });
+
+    it('starts the outline of every page with a single h1, never an earlier heading', () => {
+        for (const path of ['/', '/todos', '/profile', '/accessibility', '/missing']) {
+            const html = renderRoute(path);
+            expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
+            expect(html.search(/<h[2-6][\s>]/) === -1 || html.search(/<h[2-6][\s>]/) > html.search(/<h1[\s>]/)).toBe(true);
+        }
+    });
 });

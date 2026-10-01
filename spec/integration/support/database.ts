@@ -55,10 +55,38 @@ export async function emptyTables(connection: Connection, tables: string[] = TAB
     }
 }
 
-/** Drops application tables. Only ever reached on a "_test" database. */
+/**
+ * Drops application tables, and every table that references them through a
+ * foreign key. Only ever reached on a "_test" database.
+ *
+ * A table added by a later migration (project_items -> todo_items) would
+ * otherwise block the drop, then block the suite from recreating the older
+ * table. The setup rebuilds the whole schema before the next suite anyway.
+ */
 export async function dropTables(connection: Connection, tables: string[] = TABLES): Promise<void> {
-    for (const table of tables) {
-        await connection.query('DROP TABLE IF EXISTS ??', [table]);
+    const [references] = await connection.query<RowDataPacket[]>(
+        `SELECT TABLE_NAME AS child, REFERENCED_TABLE_NAME AS parent
+         FROM information_schema.REFERENTIAL_CONSTRAINTS
+         WHERE CONSTRAINT_SCHEMA = DATABASE()`,
+    );
+    const doomed = new Set(tables);
+    for (let grew = true; grew; ) {
+        grew = false;
+        for (const { child, parent } of references) {
+            if (doomed.has(parent) && !doomed.has(child)) {
+                doomed.add(child);
+                grew = true;
+            }
+        }
+    }
+
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0');
+    try {
+        for (const table of doomed) {
+            await connection.query('DROP TABLE IF EXISTS ??', [table]);
+        }
+    } finally {
+        await connection.query('SET FOREIGN_KEY_CHECKS = 1');
     }
 }
 

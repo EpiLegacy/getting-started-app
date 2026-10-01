@@ -7,6 +7,8 @@ import AppLayout from './AppLayout';
 import HomePage from '../pages/HomePage';
 import TodosPage from '../pages/TodosPage';
 import NotFoundPage from '../pages/NotFoundPage';
+import AccessibilityPage from '../pages/AccessibilityPage';
+import SitemapPage from '../pages/SitemapPage';
 
 export default function AppRoutes() {
     return (
@@ -14,6 +16,8 @@ export default function AppRoutes() {
             <Route element={<AppLayout />}>
                 <Route path="login" element={<AuthPage key="login" mode="login" />} />
                 <Route path="register" element={<AuthPage key="register" mode="register" />} />
+                <Route path="accessibility" element={<AccessibilityPage />} />
+                <Route path="sitemap" element={<SitemapPage />} />
                 <Route element={<RequireAuth />}>
                     <Route index element={<HomePage />} />
                     <Route path="profile" element={<ProfilePage />} />
