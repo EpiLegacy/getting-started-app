@@ -11,5 +11,5 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "spec/**/*.ts", "drizzle.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "spec/**/*.ts", "e2e/**/*.ts", "drizzle.config.ts", "playwright.config.ts"]
 }

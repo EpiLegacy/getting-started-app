@@ -126,7 +126,7 @@ export default function TodosPage() {
           maxWidth: 1000,
         }}
       >
-        <Typography variant="h5" sx={{ mb: 2, textAlign: 'center' }}>
+        <Typography component="h1" variant="h5" sx={{ mb: 2, textAlign: 'center' }}>
           My tasks
         </Typography>
 
@@ -142,7 +142,8 @@ export default function TodosPage() {
           }}
         >
           <TextField
-            label="Name"
+            label="Search by name"
+            type="search"
             variant="outlined"
             value={search}
             onChange={(event) => {
