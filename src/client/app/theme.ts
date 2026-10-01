@@ -1,4 +1,4 @@
-import { createTheme } from '@mui/material';
+import { createTheme, responsiveFontSizes } from '@mui/material';
 
 /**
  * Accessibility (RGAA 4.1, see docs/accessibility.md) is enforced here, once,
@@ -11,11 +11,13 @@ import { createTheme } from '@mui/material';
  * - 10.7: ButtonBase removes the browser outline and only shows a ripple on
  *   keyboard focus. Every focusable element gets a solid 3px ring instead.
  * - 13.8: animations and transitions stop when the user asks for less motion.
+ * - 10.11: headings shrink on narrow screens, so that a long word such as
+ *   "Accessibility" never overflows a 320 px wide window.
  */
 const PRIMARY = '#1565c0';
 const FOCUS_RING = { outline: `3px solid ${PRIMARY}`, outlineOffset: 2 };
 
-export const theme = createTheme({
+export const theme = responsiveFontSizes(createTheme({
     palette: {
         primary: { main: PRIMARY },
         background: { default: '#f4f4f4' },
@@ -29,6 +31,7 @@ export const theme = createTheme({
         MuiCssBaseline: {
             styleOverrides: {
                 ':focus-visible': FOCUS_RING,
+                'h1, h2, h3, h4, h5, h6': { overflowWrap: 'break-word' },
                 '@media (prefers-reduced-motion: reduce)': {
                     '*, *::before, *::after': {
                         animationDuration: '0.01ms !important',
@@ -48,4 +51,4 @@ export const theme = createTheme({
             },
         },
     },
-});
+}));
