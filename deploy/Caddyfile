@@ -1,0 +1,10 @@
+{$SITE_ADDRESS} {
+	encode gzip
+
+	# Prometheus scrapes /metrics from inside the network. From the internet
+	# it would describe the traffic and the process to anyone who asked.
+	@internal path /metrics /metrics/*
+	respond @internal 404
+
+	reverse_proxy api:3000
+}

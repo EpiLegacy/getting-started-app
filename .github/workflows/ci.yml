@@ -360,12 +360,104 @@ jobs:
         if: always()
         run: docker rm -f smoke || true
 
+  # The deployment itself, played on the runner: deploy/deploy.sh starts the
+  # production stack of deploy/compose.yml from the image this change builds,
+  # then is made to fail on purpose to prove it rolls back. A change that
+  # breaks deploying is caught here, not on the server after a release.
+  rehearsal:
+    name: Deployment rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_IMAGE: legacy-kanban
+      DEPLOY_PULL: '0'
+      COMPOSE_PROJECT_NAME: kanban-rehearsal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: legacy-kanban:rehearsal
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Plain HTTP on a local port: the only differences from a real server,
+      # which gets a domain name and a certificate instead.
+      - name: Write a throwaway .env
+        run: |
+          cat > deploy/.env <<'EOF'
+          SITE_ADDRESS=:80
+          HTTP_PORT=8080
+          HTTPS_PORT=8443
+          SESSION_COOKIE_SECURE=false
+          MYSQL_USER=todo
+          MYSQL_PASSWORD=ci-throwaway-password
+          MYSQL_ROOT_PASSWORD=ci-throwaway-root-password
+          RABBITMQ_USER=kanban
+          RABBITMQ_PASSWORD=ci-throwaway-password
+          EOF
+
+      - name: Deploy
+        run: deploy/deploy.sh rehearsal
+
+      # Through the proxy, as a visitor would: the database, the migrations,
+      # the sessions and the proxy rules all have to work for these to pass.
+      - name: Check the deployed application
+        run: |
+          set -eu
+          base=http://127.0.0.1:8080
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          expect() {
+            if [ "$2" != "$3" ]; then
+              echo "::error title=Deployment check failed::$1 answered $3, expected $2"
+              exit 1
+            fi
+            echo "$1: $3"
+          }
+
+          expect "GET /health" 200 "$(code "$base/health")"
+          expect "GET /metrics (hidden by the proxy)" 404 "$(code "$base/metrics")"
+          expect "GET /items signed out" 401 "$(code "$base/items")"
+          expect "POST /auth/register" 201 "$(code -c jar -H 'content-type: application/json' \
+            -d '{"email":"rehearsal@example.org","password":"a long rehearsal password"}' "$base/auth/register")"
+          expect "GET /items signed in" 200 "$(code -b jar "$base/items")"
+
+      # An image that exits at once stands for any release that cannot start.
+      - name: Deploy a broken version and expect a rollback
+        run: |
+          set -u
+          printf 'FROM legacy-kanban:rehearsal\nCMD ["node", "-e", "process.exit(1)"]\n' \
+            | docker build -t legacy-kanban:broken -
+          if DEPLOY_TIMEOUT=60 deploy/deploy.sh broken; then
+            echo "::error title=No rollback::deploy.sh reported success for a version that cannot start."
+            exit 1
+          fi
+          running="$(docker inspect -f '{{.Config.Image}}' kanban-rehearsal-api-1)"
+          if [ "$running" != legacy-kanban:rehearsal ] || [ "$(cat deploy/.deployed-version)" != rehearsal ]; then
+            echo "::error title=Rollback failed::$running is running instead of the previous version."
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:8080/health
+          echo
+          echo "The previous version is serving again."
+
+      - name: Stack logs
+        if: always()
+        run: APP_VERSION=rehearsal docker compose -f deploy/compose.yml logs --no-color --tail 100 || true
+
   publish:
     name: Publish the image
     # Only from main, and only once every other job agrees. A published image
     # must correspond to a state the pipeline actually validated.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [typecheck, lint, migrations, test, accessibility, build, docker]
+    needs: [typecheck, lint, migrations, test, accessibility, build, docker, rehearsal]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
