@@ -1,6 +1,6 @@
-import { and, eq, gt, lte } from 'drizzle-orm';
+import { and, asc, eq, gt, lte, ne, notInArray } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
-import { sessions, todoItems, users } from '../../infrastructure/db/schema';
+import { projectItems, projectMembers, projects, sessions, todoItems, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';
 
 /**
@@ -32,14 +32,56 @@ export const drizzleAuthRepository: AuthRepository = {
 
     async deleteAccount(id) {
         await transaction(async tx => {
-            // Lock the parent first. Concurrent task creations/claims and new
-            // sessions must finish before this lock or fail their foreign key
-            // after deletion; they cannot leave an owned row behind.
-            const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, id)).for('update');
+            const [user] = await tx
+                .select({ id: users.id })
+                .from(users)
+                .where(eq(users.id, id))
+                .for('update');
+
             if (!user) return;
-            await tx.delete(todoItems).where(eq(todoItems.userId, id));
+
+            const owned = await tx
+                .select({ id: projects.id })
+                .from(projects)
+                .where(eq(projects.ownerId, id));
+
+            for (const { id: projectId } of owned) {
+                const [next] = await tx
+                    .select({ userId: projectMembers.userId })
+                    .from(projectMembers)
+                    .where(
+                        and(
+                            eq(projectMembers.projectId, projectId),
+                            ne(projectMembers.userId, id),
+                        ),
+                    )
+                    .orderBy(asc(projectMembers.joinedAt))
+                    .limit(1);
+
+                if (next) {
+                    await tx
+                        .update(projects)
+                        .set({ ownerId: next.userId })
+                        .where(eq(projects.id, projectId));
+                } else {
+                    await tx.delete(projects).where(eq(projects.id, projectId));
+                }
+            }
+
+            const inProject = tx
+                .select({ taskKey: projectItems.taskKey })
+                .from(projectItems);
+
+            await tx
+                .delete(todoItems)
+                .where(
+                    and(
+                        eq(todoItems.userId, id),
+                        notInArray(todoItems.taskKey, inProject),
+                    ),
+                );
+
             await tx.delete(users).where(eq(users.id, id));
-            // All sessions are removed by the existing ON DELETE CASCADE FK.
         });
     },
 

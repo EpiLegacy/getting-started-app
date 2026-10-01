@@ -9,10 +9,15 @@ const service: AuthService = {
     profile: jest.fn(), deleteAccount: jest.fn(), register: jest.fn(), login: jest.fn(), logout: jest.fn(),
 };
 const repository: jest.Mocked<TaskRepository> = {
-    list: jest.fn(), listUnassigned: jest.fn(), create: jest.fn(),
-    claim: jest.fn(), update: jest.fn(), remove: jest.fn(),
+    list: jest.fn(),
+    listUnassigned: jest.fn(),
+    create: jest.fn(),
+    claim: jest.fn(),
+    update: jest.fn(),
+    remove: jest.fn(),
+    listForUser: jest.fn(),
 };
-const input = { name: 'Task', completed: false, deadline: '', priorisation: 'medium' };
+const input = { name: 'Task', completed: false, deadline: '', priorisation: 'medium', status: 'todo' as const };
 function app(auth: AuthService | undefined = service) {
     return express().use(express.json()).use('/items', createTaskRouter(auth, repository));
 }

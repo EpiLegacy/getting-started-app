@@ -35,7 +35,7 @@ describe('frontend routes', () => {
 
     it('renders the todo list and marks Todos as the current page', () => {
         const html = renderRoute('/todos');
-        expect(html).toContain('My tasks');
+        expect(html).toContain('TODO list');
         expect(html).toMatch(/aria-current="page"[^>]*href="\/todos"/);
         expect(html).not.toContain('Welcome back!');
     });

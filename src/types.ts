@@ -1,11 +1,14 @@
 export type Priority = 'high' | 'medium' | 'low';
 
+export type TaskStatus = 'todo' | 'inProgress' | 'completed';
+
 export interface Item {
     id: string;
     name: string;
     completed: boolean;
     deadline: string;
     priorisation: Priority;
+    status?: TaskStatus;
 }
 
 export interface StoredItem {

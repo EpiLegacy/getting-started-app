@@ -10,6 +10,7 @@ const taskInput = z.object({
     completed: z.boolean(),
     deadline: z.union([z.literal(''), z.iso.date()]),
     priorisation: z.enum(['high', 'medium', 'low']),
+    status: z.enum(['todo', 'inProgress', 'completed']),
 });
 const taskId = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive().max(4294967295));
 
@@ -80,6 +81,9 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
             return;
         }
         res.status(204).end();
+    });
+    router.get('/forUser', async (_req, res) => {
+        res.json(await repository.listForUser(currentUser(res).id));
     });
     return router;
 }

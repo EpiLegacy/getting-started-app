@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { and, asc, eq, isNull } from 'drizzle-orm';
-import { getDb, transaction } from '../../infrastructure/db/drizzle';
-import { todoItems } from '../../infrastructure/db/schema';
+import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
+import { projectItems, projectMembers, projects, todoItems } from '../../infrastructure/db/schema';
 import { enqueue } from '../../infrastructure/outbox/outboxRepository.drizzle';
 import { createEvent } from '../../shared/events/envelope';
 import { TASK_COMPLETED, eventCatalog } from '../../shared/events/catalog';
@@ -15,6 +15,7 @@ function toTask(row: typeof todoItems.$inferSelect): Task {
         completed: row.completed === true,
         deadline: row.deadline ?? '',
         priorisation: row.priorisation ?? 'medium',
+        status: row.status,
     };
 }
 
@@ -64,5 +65,35 @@ export const taskRepository: TaskRepository = {
     async remove(id, userId) {
         const [result] = await getDb().delete(todoItems).where(owned(id, userId));
         return result.affectedRows === 1;
+    },
+    async listForUser(userId: string) {
+        return unwrapErrors(() =>
+            getDb()
+                .select({
+                    taskKey: todoItems.taskKey,
+                    id: todoItems.id,
+                    userId: todoItems.userId,
+                    name: todoItems.name,
+                    completed: todoItems.completed,
+                    deadline: todoItems.deadline,
+                    priorisation: todoItems.priorisation,
+                    status: todoItems.status,
+                    projectName: projects.name,
+                })
+                .from(projectMembers)
+                .innerJoin(
+                    projects,
+                    eq(projects.id, projectMembers.projectId),
+                )
+                .innerJoin(
+                    projectItems,
+                    eq(projectItems.projectId, projects.id),
+                )
+                .innerJoin(
+                    todoItems,
+                    eq(todoItems.taskKey, projectItems.taskKey),
+                )
+                .where(eq(projectMembers.userId, userId))
+        );
     },
 };

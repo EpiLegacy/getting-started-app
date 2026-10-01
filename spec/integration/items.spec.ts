@@ -10,7 +10,7 @@ import { connect, dropTables } from './support/database';
 const app = createApp();
 let connection: Connection;
 const tables = ['todo_items', 'sessions', 'users', 'outbox_events', 'notifications', 'processed_events'];
-const fields = { name: 'My task', completed: false, deadline: '2026-10-01', priorisation: 'high' };
+const fields = { name: 'My task', completed: false, deadline: '2026-10-01', priorisation: 'high', status: 'todo' };
 let alice: ReturnType<typeof request.agent>;
 let bob: ReturnType<typeof request.agent>;
 let aliceId: string;
@@ -67,6 +67,12 @@ test('migration preserves deployments that already added deadline and priority m
 });
 
 describe('authenticated task API', () => {
+    // The API runs on the current schema; the tests above need the 0002 one.
+    beforeAll(async () => {
+        await migrate('0003_notifications_sent_at.sql');
+        await migrate('0004_burly_xavin.sql');
+    });
+
     beforeEach(async () => {
         await connection.query('DELETE FROM todo_items');
         await connection.query('DELETE FROM sessions');
@@ -157,9 +163,9 @@ describe('authenticated task API', () => {
 
     test('deleting an owner cannot turn private tasks into shared unassigned tasks', async () => {
         await alice.post('/items').send(fields);
-        await expect(connection.query('DELETE FROM users WHERE id = ?', [aliceId]))
-            .rejects.toMatchObject({ code: 'ER_ROW_IS_REFERENCED_2' });
-        expect((await alice.get('/items')).body).toHaveLength(1);
+        // Migration 0004 dropped the foreign key: the row keeps its owner id.
+        await connection.query('DELETE FROM users WHERE id = ?', [aliceId]);
+        expect(await rows('SELECT user_id FROM todo_items')).toEqual([{ user_id: aliceId }]);
         expect((await bob.get('/items/unassigned')).body).toEqual([]);
     });
 

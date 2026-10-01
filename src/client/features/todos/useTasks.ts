@@ -1,31 +1,47 @@
 import { useEffect, useState } from 'react';
-import type { Task } from '../../../modules/tasks/types';
+import type { Task, TaskForUser } from '../../../modules/tasks/types';
 import { ApiError, errorMessage } from '../../lib/http';
 import { itemsApi } from './api/itemsApi';
 
 export function useTasks() {
     const [items, setItems] = useState<Task[]>([]);
+    const [itemsForUser, setItemsForUser] = useState<TaskForUser[]>([]);
     const [unassigned, setUnassigned] = useState<Task[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [pending, setPending] = useState(false);
     const [revision, setRevision] = useState(0);
+
     const invalidate = () => setRevision(value => value + 1);
     const refresh = () => { setError(''); invalidate(); };
 
     useEffect(() => {
         const controller = new AbortController();
         setLoading(true);
-        Promise.all([itemsApi.getAll(controller.signal), itemsApi.getUnassigned(controller.signal)])
-            .then(([mine, available]) => {
+
+        Promise.all([
+            itemsApi.getAll(controller.signal),
+            itemsApi.getForUser(controller.signal),
+            itemsApi.getUnassigned(controller.signal),
+        ])
+            .then(([mine, mineForUser, available]) => {
                 if (controller.signal.aborted) return;
+
                 setItems(mine);
+                setItemsForUser(mineForUser);
                 setUnassigned(available);
-            }).catch(cause => {
-                if (!controller.signal.aborted) setError(errorMessage(cause));
-            }).finally(() => {
-                if (!controller.signal.aborted) setLoading(false);
+            })
+            .catch(cause => {
+                if (!controller.signal.aborted) {
+                    setError(errorMessage(cause));
+                }
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setLoading(false);
+                }
             });
+
         return () => controller.abort();
     }, [revision]);
 
@@ -41,5 +57,5 @@ export function useTasks() {
             if (cause instanceof ApiError && [404, 409].includes(cause.status)) invalidate();
         } finally { setPending(false); }
     }
-    return { items, unassigned, loading, error, pending, refresh, mutate };
+    return { items, unassigned, loading, error, pending, refresh, mutate, itemsForUser };
 }

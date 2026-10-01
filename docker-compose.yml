@@ -243,3 +243,4 @@ volumes:
   prometheus-data:
   mysql-data:
   rabbitmq-data:
+  
