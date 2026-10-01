@@ -68,11 +68,18 @@ test.describe('signed-in pages', () => {
 
     test('the task list conforms with tasks in it', async ({ page }) => {
         const created = await page.request.post('/items', {
-            data: { name: 'Write the accessibility statement', deadline: '2026-10-02', priorisation: 'high' },
+            data: { name: 'Write the accessibility statement', deadline: '2026-10-02', priorisation: 'high', status: 'todo' },
         });
         expect(created.ok()).toBe(true);
+        // The board only shows tasks that belong to one of the user's projects.
+        const { user } = await (await page.request.get('/auth/me')).json();
+        const { project } = await (await page.request.post('/projects', { data: { name: 'Audit' } })).json();
+        const linked = await page.request.post(`/projects/${project.id}/items`, {
+            data: { taskKey: Number((await created.json()).id), userId: user.id },
+        });
+        expect(linked.ok()).toBe(true);
         await page.goto('/todos');
-        await expect(page.getByRole('cell', { name: 'Write the accessibility statement', exact: true })).toBeVisible();
+        await expect(page.getByText('Write the accessibility statement', { exact: true })).toBeVisible();
         await expectNoViolations(page);
     });
 

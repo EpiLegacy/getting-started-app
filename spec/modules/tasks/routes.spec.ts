@@ -17,7 +17,7 @@ const repository: jest.Mocked<TaskRepository> = {
     remove: jest.fn(),
     listForUser: jest.fn(),
 };
-const input = { name: 'Task', completed: false, deadline: '', priorisation: 'medium' };
+const input = { name: 'Task', completed: false, deadline: '', priorisation: 'medium', status: 'todo' as const };
 function app(auth: AuthService | undefined = service) {
     return express().use(express.json()).use('/items', createTaskRouter(auth, repository));
 }

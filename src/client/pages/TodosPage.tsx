@@ -353,6 +353,7 @@ export default function TodosPage() {
         }}
       >
         <Typography
+          component="h1"
           variant="h5"
           sx={{
             mb: 2,
@@ -603,6 +604,7 @@ export default function TodosPage() {
 
                               <IconButton
                                 size="small"
+                                aria-label={`Supprimer la tâche ${item.name ?? ''}`}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   handleDeleteItem(String(item.taskKey));
