@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   MenuItem,
-  Modal,
+  Stack,
   TextField,
   Typography,
 } from '@mui/material';
@@ -138,14 +141,14 @@ export default function AddItem({
 
     if (!projectId) {
       setError(
-        'Veuillez sélectionner un projet.',
+        'Choose a project.',
       );
       return;
     }
 
     if (!assigneeId) {
       setError(
-        'Veuillez sélectionner un utilisateur.',
+        'Choose who the task is assigned to.',
       );
       return;
     }
@@ -180,230 +183,105 @@ export default function AddItem({
     }
   };
 
+  // A MUI Dialog rather than a bare Modal: it is announced as a dialog, named
+  // by its title, keeps the focus inside and fits narrow screens (RGAA 7.1,
+  // 10.11).
   return (
-    <Modal
+    <Dialog
       open={open}
-      onClose={
-        busy
-          ? undefined
-          : handleCancel
-      }
-      aria-labelledby="modal-modal-title"
+      onClose={busy ? undefined : handleCancel}
+      aria-labelledby="add-item-title"
+      fullWidth
+      maxWidth="xs"
     >
-      <Box
-        component="form"
-        onSubmit={handleSubmit}
-        sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform:
-            'translate(-50%, -50%)',
-          width: 400,
-          maxWidth: 'calc(100vw - 32px)',
-          bgcolor:
-            'background.paper',
-          borderRadius: 2,
-          boxShadow: 24,
-          p: 4,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-        }}
-      >
-        <Typography
-          id="modal-modal-title"
-          variant="h6"
-          component="h2"
-        >
-          Ajouter une tâche
-        </Typography>
-
-        {error && (
-          <Alert severity="error">
-            {error}
-          </Alert>
-        )}
-
-        <TextField
-          name="name"
-          label="Nom"
-          variant="outlined"
-          required
-          fullWidth
-          value={name}
-          onChange={event =>
-            setName(
-              event.target.value,
-            )
-          }
-          disabled={busy}
-        />
-
-        <TextField
-          name="deadline"
-          label="Deadline"
-          type="date"
-          variant="outlined"
-          required
-          fullWidth
-          value={deadline}
-          onChange={event =>
-            setDeadline(
-              event.target.value,
-            )
-          }
-          disabled={busy}
-          slotProps={{
-            inputLabel: {
-              shrink: true,
-            },
-          }}
-        />
-
-        <TextField
-          name="priorisation"
-          label="Priorisation"
-          select
-          value={priorisation}
-          onChange={event =>
-            setPriorisation(
-              event.target.value as Priority,
-            )
-          }
-          required
-          fullWidth
-          disabled={busy}
-        >
-          <MenuItem value="high">
-            High
-          </MenuItem>
-
-          <MenuItem value="medium">
-            Medium
-          </MenuItem>
-
-          <MenuItem value="low">
-            Low
-          </MenuItem>
-        </TextField>
-
-        <TextField
-          name="project"
-          label="Projet"
-          select
-          required
-          fullWidth
-          value={projectId}
-          disabled={
-            busy ||
-            projectsLoading
-          }
-          onChange={event =>
-            setProjectId(
-              event.target.value,
-            )
-          }
-        >
-          {projects.length === 0 && (
-            <MenuItem
-              value=""
-              disabled
-            >
-              Aucun projet disponible
-            </MenuItem>
-          )}
-
-          {projects.map(project => (
-            <MenuItem
-              key={project.id}
-              value={project.id}
-            >
-              {project.name}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        <TextField
-          name="assignee"
-          label="Attribuer à"
-          select
-          required
-          fullWidth
-          value={assigneeId}
-          disabled={
-            busy ||
-            projectsLoading ||
-            !selectedProject ||
-            selectedProject.members
-              .length === 0
-          }
-          onChange={event =>
-            setAssigneeId(
-              event.target.value,
-            )
-          }
-        >
-          {!selectedProject ||
-            selectedProject.members.length ===
-            0 ? (
-            <MenuItem
-              value=""
-              disabled
-            >
-              Aucun membre disponible
-            </MenuItem>
-          ) : (
-            selectedProject.members.map(
-              member => (
-                <MenuItem
-                  key={member.id}
-                  value={member.id}
-                >
-                  {member.email}
-                </MenuItem>
-              ),
-            )
-          )}
-        </TextField>
-
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent:
-              'flex-end',
-            gap: 1,
-            mt: 1,
-          }}
-        >
-          <Button
+      <form onSubmit={handleSubmit}>
+      <DialogTitle id="add-item-title">Add a task</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          <Typography variant="body2" color="text.secondary">
+            All fields are required.
+          </Typography>
+          {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            name="name"
+            label="Name"
+            required
+            fullWidth
+            autoFocus
+            value={name}
+            onChange={event => setName(event.target.value)}
             disabled={busy}
-            type="button"
-            variant="outlined"
-            onClick={
-              handleCancel
-            }
+          />
+          <TextField
+            name="deadline"
+            label="Deadline"
+            type="date"
+            required
+            fullWidth
+            value={deadline}
+            onChange={event => setDeadline(event.target.value)}
+            disabled={busy}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <TextField
+            name="priorisation"
+            label="Priority"
+            select
+            value={priorisation}
+            onChange={event => setPriorisation(event.target.value as Priority)}
+            required
+            fullWidth
+            disabled={busy}
           >
-            Annuler
-          </Button>
-
-          <Button
-            disabled={
-              busy ||
-              projectsLoading ||
-              projects.length === 0 ||
-              !projectId ||
-              !assigneeId
-            }
-            type="submit"
-            variant="contained"
+            <MenuItem value="high">High</MenuItem>
+            <MenuItem value="medium">Medium</MenuItem>
+            <MenuItem value="low">Low</MenuItem>
+          </TextField>
+          <TextField
+            name="project"
+            label="Project"
+            select
+            required
+            fullWidth
+            value={projectId}
+            disabled={busy || projectsLoading}
+            onChange={event => setProjectId(event.target.value)}
+            helperText={!projectsLoading && projects.length === 0 ? 'Create a project first.' : undefined}
           >
-            {busy
-              ? 'Ajout...'
-              : 'Ajouter'}
-          </Button>
-        </Box>
-      </Box>
-    </Modal>
+            {projects.length === 0 && <MenuItem value="" disabled>No project yet</MenuItem>}
+            {projects.map(project => (
+              <MenuItem key={project.id} value={project.id}>{project.name}</MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            name="assignee"
+            label="Assigned to"
+            select
+            required
+            fullWidth
+            value={assigneeId}
+            disabled={busy || projectsLoading || !selectedProject || selectedProject.members.length === 0}
+            onChange={event => setAssigneeId(event.target.value)}
+          >
+            {!selectedProject || selectedProject.members.length === 0
+              ? <MenuItem value="" disabled>No member yet</MenuItem>
+              : selectedProject.members.map(member => (
+                <MenuItem key={member.id} value={member.id}>{member.email}</MenuItem>
+              ))}
+          </TextField>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button disabled={busy} type="button" onClick={handleCancel}>Cancel</Button>
+        <Button
+          disabled={busy || projectsLoading || projects.length === 0 || !projectId || !assigneeId}
+          type="submit"
+          variant="contained"
+        >
+          {busy ? 'Adding…' : 'Add task'}
+        </Button>
+      </DialogActions>
+      </form>
+    </Dialog>
   );
 }

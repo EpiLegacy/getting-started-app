@@ -48,14 +48,14 @@ export default function AddProject({
 
     if (!trimmedName) {
       setError(
-        'Le nom du projet est obligatoire.',
+        'The project name is required.',
       );
       return;
     }
 
     if (trimmedName.length > 255) {
       setError(
-        'Le nom du projet ne peut pas dépasser 255 caractères.',
+        'The project name cannot exceed 255 characters.',
       );
       return;
     }
@@ -79,7 +79,7 @@ export default function AddProject({
         setError(error.message);
       } else {
         setError(
-          'Impossible de créer le projet.',
+          'Could not create the project.',
         );
       }
     } finally {
@@ -107,9 +107,10 @@ export default function AddProject({
       onClose={handleCloseDialog}
       fullWidth
       maxWidth="sm"
+      aria-labelledby="add-project-title"
     >
-      <DialogTitle>
-        Créer un projet
+      <DialogTitle id="add-project-title">
+        Create a project
       </DialogTitle>
 
       <DialogContent>
@@ -128,8 +129,8 @@ export default function AddProject({
         <TextField
           autoFocus
           fullWidth
-          label="Nom du projet"
-          placeholder="Mon projet"
+          label="Project name"
+          required
           value={name}
           disabled={loading}
           onChange={(event) => {
@@ -149,7 +150,7 @@ export default function AddProject({
           onClick={handleCloseDialog}
           disabled={loading}
         >
-          Annuler
+          Cancel
         </Button>
 
         <Button
@@ -166,7 +167,7 @@ export default function AddProject({
             />
           )}
 
-          Créer
+          Create
         </Button>
       </DialogActions>
     </Dialog>

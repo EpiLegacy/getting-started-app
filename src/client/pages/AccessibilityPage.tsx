@@ -5,18 +5,16 @@ import { Box, Container, Link, Stack, Typography } from '@mui/material';
  * Accessibility statement, following the RGAA 4.1.2 model. The audit behind
  * every figure here is docs/accessibility.md: update both together.
  */
-const AUDIT_DATE = '2026-10-01';
-const CRITERIA_MET = 52;
-const CRITERIA_APPLICABLE = 55;
+const AUDIT_DATE = '2026-10-02';
+const CRITERIA_MET = 55;
+const CRITERIA_APPLICABLE = 56;
 
 const NON_COMPLIANT: Array<[string, string]> = [
-    ['7.1', 'The task creation form opens in a window that is not announced as a dialog.'],
-    ['8.7', 'The task creation form is in French inside an English page, and this change of language is not declared.'],
-    ['10.11', 'In a window 320 pixels wide, the task creation form is wider than the screen.'],
+    ['7.1', 'The compatibility of interactive components with screen readers has not been verified with a screen reader yet. Automated checks find no issue.'],
 ];
 
 const AUDITED_PAGES = [
-    'Sign in', 'Create an account', 'Home', 'My tasks', 'Your profile, with the account deletion dialog',
+    'Sign in', 'Create an account', 'Home', 'My tasks: the Kanban board and the add task dialog', 'Your profile, with the account deletion dialog',
     'Accessibility statement', 'Site map', 'Page not found',
 ];
 

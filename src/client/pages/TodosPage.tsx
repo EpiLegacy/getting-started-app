@@ -4,7 +4,6 @@ import {
 } from '@mui/icons-material';
 
 import {
-  Avatar,
   Box,
   Button,
   Chip,
@@ -14,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
+  MenuItem,
   Paper,
   Table,
   TableBody,
@@ -22,7 +22,6 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 
@@ -50,6 +49,23 @@ const kanbanColumns: {
     { id: 'completed', title: 'Completed' },
   ];
 
+/** Read by screen readers, not shown (the usual "sr-only" pattern). */
+const visuallyHidden = {
+  position: 'absolute',
+  // Strings: in sx, a bare 1 means 100%.
+  width: '1px',
+  height: '1px',
+  margin: '-1px',
+  padding: 0,
+  border: 0,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+} as const;
+
+const columnTitle = (status: TaskStatus) =>
+  kanbanColumns.find(column => column.id === status)?.title ?? status;
+
 export default function TodosPage() {
   const {
     items,
@@ -74,6 +90,8 @@ export default function TodosPage() {
   const [sortDirection, _] = useState<'asc' | 'desc'>('asc');
   const [taskStatuses, setTaskStatuses] = useState<Record<string, TaskStatus>>({});
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  // RGAA 7.5: the outcome of a move or a deletion is announced, not only shown.
+  const [announcement, setAnnouncement] = useState('');
 
   const loadProjects = async () => {
     try {
@@ -85,12 +103,12 @@ export default function TodosPage() {
       setProjects(data);
     } catch (err) {
       console.error(
-        'Erreur chargement projets:',
+        'Failed to load projects:',
         err,
       );
 
       setProjectsError(
-        'Impossible de charger les projets.',
+        'Could not load the projects.',
       );
     } finally {
       setProjectsLoading(false);
@@ -117,7 +135,7 @@ export default function TodosPage() {
 
     if (!email) {
       setMemberError(
-        'Veuillez saisir un email.',
+        'Enter an e-mail address.',
       );
       return;
     }
@@ -153,12 +171,12 @@ export default function TodosPage() {
       setMemberEmail('');
     } catch (err) {
       console.error(
-        'Erreur ajout utilisateur:',
+        'Failed to add a member:',
         err,
       );
 
       setMemberError(
-        'Impossible d’ajouter cet utilisateur.',
+        'Could not add this member. Check the e-mail address.',
       );
     } finally {
       setMemberLoading(false);
@@ -173,12 +191,14 @@ export default function TodosPage() {
 
       await projectApi.remove(projectId);
 
+      const deleted = projects.find(project => project.id === projectId);
       setProjects((currentProjects) =>
         currentProjects.filter(
           (project) =>
             project.id !== projectId,
         ),
       );
+      setAnnouncement(`Project ${deleted?.name ?? ''} deleted.`);
       refresh();
 
       if (
@@ -190,9 +210,10 @@ export default function TodosPage() {
       }
     } catch (err) {
       console.error(
-        'Erreur suppression projet:',
+        'Failed to delete the project:',
         err,
       );
+      setAnnouncement('Could not delete the project.');
     } finally {
       setDeleteProjectLoading(null);
     }
@@ -273,18 +294,36 @@ export default function TodosPage() {
     return null;
   };
 
-  const handleDeleteItem = async (id: string) => {
+  const handleDeleteItem = async (id: string, name: string | null) => {
     try {
       await itemsApi.remove(id);
-
+      setAnnouncement(`Task ${name ?? ''} deleted.`);
       refresh();
     } catch (error) {
       console.error('Failed to delete item:', error);
+      setAnnouncement(`Could not delete the task ${name ?? ''}.`);
+    }
+  };
+
+  // Shared by drag and drop and by the status select on each card: the select
+  // is the keyboard and touch alternative to dragging (RGAA 7.1, 7.3).
+  const moveTask = async (taskId: string, status: TaskStatus, name: string | null) => {
+    try {
+      await itemsApi.updateStatus(taskId, status);
+
+      setTaskStatuses((current) => ({
+        ...current,
+        [taskId]: status,
+      }));
+      setAnnouncement(`Task ${name ?? ''} moved to ${columnTitle(status)}.`);
+    } catch (error) {
+      console.error('Failed to update task status:', error);
+      setAnnouncement(`Could not move the task ${name ?? ''}.`);
     }
   };
 
   const handleDragStart = (
-    event: React.DragEvent<HTMLDivElement>,
+    event: React.DragEvent<HTMLElement>,
     taskKey: number,
   ) => {
     const key = String(taskKey);
@@ -299,14 +338,14 @@ export default function TodosPage() {
   };
 
   const handleDragOver = (
-    event: React.DragEvent<HTMLDivElement>,
+    event: React.DragEvent<HTMLElement>,
   ) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
   };
 
   const handleDrop = async (
-    event: React.DragEvent<HTMLDivElement>,
+    event: React.DragEvent<HTMLElement>,
     status: TaskStatus,
   ) => {
     event.preventDefault();
@@ -319,16 +358,8 @@ export default function TodosPage() {
       return;
     }
 
-    try {
-      await itemsApi.updateStatus(taskId, status);
-
-      setTaskStatuses((current) => ({
-        ...current,
-        [taskId]: status,
-      }));
-    } catch (error) {
-      console.error('Failed to update task status:', error);
-    }
+    const task = filteredItems.find(item => String(item.taskKey) === taskId);
+    await moveTask(taskId, status, task?.name ?? null);
 
     setDraggedTaskId(null);
   };
@@ -346,6 +377,9 @@ export default function TodosPage() {
         },
       }}
     >
+      <Box role="status" aria-live="polite" sx={visuallyHidden}>
+        {announcement}
+      </Box>
       <Box
         sx={{
           mb: 3,
@@ -396,7 +430,7 @@ export default function TodosPage() {
               startIcon={<AddIcon />}
               onClick={() => setProjectOpen(true)}
             >
-              Ajouter un projet
+              Add a project
             </Button>
 
             <Button
@@ -404,7 +438,7 @@ export default function TodosPage() {
               startIcon={<AddIcon />}
               onClick={() => setOpen(true)}
             >
-              Ajouter une tâche
+              Add a task
             </Button>
           </Box>
         </Box>
@@ -412,10 +446,11 @@ export default function TodosPage() {
 
       <Box sx={{ mb: 3 }}>
         <Typography
+          component="h2"
           variant="h6"
           sx={{ mb: 1 }}
         >
-          Mes tâches
+          My tasks
         </Typography>
 
         {loading ? (
@@ -426,7 +461,7 @@ export default function TodosPage() {
               py: 5,
             }}
           >
-            <CircularProgress />
+            <CircularProgress aria-label="Loading tasks" />
           </Box>
         ) : error ? (
           <Paper
@@ -451,7 +486,7 @@ export default function TodosPage() {
                 variant="outlined"
                 onClick={() => void refresh()}
               >
-                Réessayer
+                Retry
               </Button>
             </Box>
           </Paper>
@@ -484,6 +519,8 @@ export default function TodosPage() {
 
                 return (
                   <Box
+                    component="section"
+                    aria-labelledby={`column-${column.id}`}
                     key={column.id}
                     onDragOver={handleDragOver}
                     onDrop={(event) =>
@@ -512,13 +549,19 @@ export default function TodosPage() {
                       }}
                     >
                       <Typography
+                        id={`column-${column.id}`}
+                        component="h3"
                         variant="subtitle1"
                         fontWeight={700}
                       >
                         {column.title}
+                        <Box component="span" sx={visuallyHidden}>
+                          {` (${columnItems.length} ${columnItems.length === 1 ? 'task' : 'tasks'})`}
+                        </Box>
                       </Typography>
 
                       <Chip
+                        aria-hidden
                         size="small"
                         label={columnItems.length}
                         sx={{ fontWeight: 600 }}
@@ -526,10 +569,14 @@ export default function TodosPage() {
                     </Box>
 
                     <Box
+                      component={columnItems.length === 0 ? 'div' : 'ul'}
                       sx={{
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 1.5,
+                        listStyle: 'none',
+                        m: 0,
+                        p: 0,
                       }}
                     >
                       {columnItems.length === 0 ? (
@@ -548,12 +595,13 @@ export default function TodosPage() {
                             variant="body2"
                             color="text.secondary"
                           >
-                            Déposez une tâche ici
+                            No task
                           </Typography>
                         </Box>
                       ) : (
                         columnItems.map((item) => (
                           <Paper
+                            component="li"
                             key={item.id}
                             draggable
                             elevation={0}
@@ -593,6 +641,7 @@ export default function TodosPage() {
                               }}
                             >
                               <Typography
+                                component="h4"
                                 variant="subtitle2"
                                 fontWeight={700}
                                 sx={{
@@ -604,10 +653,10 @@ export default function TodosPage() {
 
                               <IconButton
                                 size="small"
-                                aria-label={`Supprimer la tâche ${item.name ?? ''}`}
+                                aria-label={`Delete the task ${item.name ?? ''}`}
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  handleDeleteItem(String(item.taskKey));
+                                  void handleDeleteItem(String(item.taskKey), item.name);
                                 }}
                                 sx={{
                                   ml: 1,
@@ -636,48 +685,48 @@ export default function TodosPage() {
                                 gap: 0.75,
                               }}
                             >
-                              <Tooltip
-                                title={`Deadline`}
-                                arrow
-                              >
+                              {item.deadline && (
                                 <Chip
-                                  size="medium"
+                                  size="small"
                                   variant="outlined"
-                                  label={item.deadline}
+                                  label={`Due ${item.deadline}`}
                                 />
-                              </Tooltip>
-                              <Tooltip
-                                title={`Priorité`}
-                                arrow
-                              >
+                              )}
+                              {item.priorisation && (
                                 <Chip
-                                  size="medium"
-                                  label={item.priorisation}
+                                  size="small"
+                                  label={`Priority: ${item.priorisation}`}
                                   color={
-                                    item.priorisation === "high" ? "error" :
-                                      item.priorisation === "medium" ? "warning" : "success"
-
+                                    item.priorisation === 'high' ? 'error' :
+                                      item.priorisation === 'medium' ? 'warning' : 'success'
                                   }
                                 />
-                              </Tooltip>
-                              <Tooltip
-                                title={`Utilisateur assigné`}
-                                arrow
-                              >
-                                <Chip
-                                  size="medium"
-                                  variant="outlined"
-                                  avatar={
-                                    getUserEmail(item.userId) ? (
-                                      <Avatar>
-                                        {getUserEmail(item.userId)?.charAt(0).toUpperCase()}
-                                      </Avatar>
-                                    ) : undefined
-                                  }
-                                  label={getUserEmail(item.userId) ?? item.userId ?? "compte supprimer"}
-                                />
-                              </Tooltip>
+                              )}
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                label={`Assigned to ${getUserEmail(item.userId) ?? 'a deleted account'}`}
+                              />
                             </Box>
+
+                            <TextField
+                              select
+                              size="small"
+                              fullWidth
+                              label="Status"
+                              value={taskStatuses[String(item.taskKey)] ?? getTaskStatus(item)}
+                              onChange={(event) =>
+                                void moveTask(String(item.taskKey), event.target.value as TaskStatus, item.name)
+                              }
+                              slotProps={{ htmlInput: { 'aria-label': `Status of ${item.name ?? 'task'}` } }}
+                              sx={{ mt: 1.5 }}
+                            >
+                              {kanbanColumns.map((option) => (
+                                <MenuItem key={option.id} value={option.id}>
+                                  {option.title}
+                                </MenuItem>
+                              ))}
+                            </TextField>
                           </Paper>
                         ))
                       )}
@@ -692,10 +741,11 @@ export default function TodosPage() {
 
       <Box sx={{ mb: 4 }}>
         <Typography
+          component="h2"
           variant="h6"
           sx={{ mb: 1 }}
         >
-          Mes projets
+          My projects
         </Typography>
         {projectsLoading ? (
           <Box
@@ -705,7 +755,7 @@ export default function TodosPage() {
               py: 3,
             }}
           >
-            <CircularProgress size={28} />
+            <CircularProgress size={28} aria-label="Loading projects" />
           </Box>
         ) : projectsError ? (
           <Paper
@@ -732,7 +782,7 @@ export default function TodosPage() {
                   void loadProjects()
                 }
               >
-                Réessayer
+                Retry
               </Button>
             </Box>
           </Paper>
@@ -745,7 +795,7 @@ export default function TodosPage() {
               color="text.secondary"
               textAlign="center"
             >
-              Aucun projet pour le moment.
+              No project yet.
             </Typography>
           </Paper>
         ) : (
@@ -753,9 +803,9 @@ export default function TodosPage() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell> Nom du projet </TableCell>
-                  <TableCell> Utilisateurs </TableCell>
-                  <TableCell align="right"> Actions </TableCell>
+                  <TableCell>Project</TableCell>
+                  <TableCell>Members</TableCell>
+                  <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -773,15 +823,20 @@ export default function TodosPage() {
                       {project.members &&
                         project.members.length > 0 ? (
                         <Box
+                          component="ul"
                           sx={{
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 0.5,
+                            listStyle: 'none',
+                            m: 0,
+                            p: 0,
                           }}
                         >
                           {project.members.map(
                             (member) => (
                               <Typography
+                                component="li"
                                 key={member.id}
                                 variant="body2"
                               >
@@ -795,7 +850,7 @@ export default function TodosPage() {
                           variant="body2"
                           color="text.secondary"
                         >
-                          Aucun utilisateur
+                          No member
                         </Typography>
                       )}
                     </TableCell>
@@ -805,17 +860,19 @@ export default function TodosPage() {
                         variant="outlined"
                         startIcon={<AddIcon />}
                         sx={{ mr: 1 }}
+                        aria-label={`Add member to ${project.name}`}
                         onClick={() => {
                           setMemberProject(project);
                           setMemberEmail('');
                           setMemberError(null);
                         }}
                       >
-                        Ajouter
+                        Add member
                       </Button>
                       <Button
                         size="small"
                         color="error"
+                        aria-label={`Delete the project ${project.name}`}
                         variant="outlined"
                         startIcon={
                           <DeleteIcon />
@@ -824,7 +881,7 @@ export default function TodosPage() {
                           setProjectToDelete(project);
                         }}
                       >
-                        Supprimer
+                        Delete
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -837,10 +894,11 @@ export default function TodosPage() {
 
       <Box sx={{ mb: 4 }}>
         <Typography
+          component="h2"
           variant="h6"
           sx={{ mb: 1 }}
         >
-          Tâches non assignées
+          Unassigned tasks
         </Typography>
 
         <Paper
@@ -852,21 +910,26 @@ export default function TodosPage() {
             <Typography
               color="text.secondary"
             >
-              Aucune tâche non assignée.
+              No unassigned task.
             </Typography>
           ) : (
             <Box
+              component="ul"
               sx={{
                 display:
                   'flex',
                 flexDirection:
                   'column',
                 gap: 1,
+                listStyle: 'none',
+                m: 0,
+                p: 0,
               }}
             >
               {unassigned.map(
                 (item) => (
                   <Box
+                    component="li"
                     key={item.id}
                     sx={{
                       display:
@@ -912,9 +975,10 @@ export default function TodosPage() {
         }}
         fullWidth
         maxWidth="sm"
+        aria-labelledby="add-member-title"
       >
-        <DialogTitle>
-          Ajouter un utilisateur
+        <DialogTitle id="add-member-title">
+          Add a member
         </DialogTitle>
         <DialogContent>
           <Typography
@@ -922,13 +986,14 @@ export default function TodosPage() {
             color="text.secondary"
             sx={{ mb: 2 }}
           >
-            Projet :{' '}
+            Project:{' '}
             {memberProject?.name}
           </Typography>
           <TextField
             autoFocus
             fullWidth
-            label="Email de l'utilisateur"
+            label="Member e-mail"
+            required
             type="email"
             value={memberEmail}
             onChange={(event) =>
@@ -971,7 +1036,7 @@ export default function TodosPage() {
               memberLoading
             }
           >
-            Annuler
+            Cancel
           </Button>
           <Button
             variant="contained"
@@ -983,13 +1048,7 @@ export default function TodosPage() {
               !memberEmail.trim()
             }
           >
-            {memberLoading ? (
-              <CircularProgress
-                size={20}
-              />
-            ) : (
-              'Ajouter'
-            )}
+            {memberLoading ? 'Adding…' : 'Add'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1000,19 +1059,19 @@ export default function TodosPage() {
         }
         fullWidth
         maxWidth="xs"
+        aria-labelledby="delete-project-title"
       >
-        <DialogTitle>
-          Supprimer le projet
+        <DialogTitle id="delete-project-title">
+          Delete the project?
         </DialogTitle>
 
         <DialogContent>
           <Typography>
-            Voulez-vous vraiment supprimer le
-            projet{' '}
+            The project{' '}
             <strong>
               {projectToDelete?.name}
             </strong>{' '}
-            ?
+            will be deleted for all its members.
           </Typography>
 
           <Typography
@@ -1020,7 +1079,7 @@ export default function TodosPage() {
             color="text.secondary"
             sx={{ mt: 1 }}
           >
-            Cette action est irréversible.
+            This cannot be undone.
           </Typography>
         </DialogContent>
 
@@ -1033,7 +1092,7 @@ export default function TodosPage() {
               deleteProjectLoading !== null
             }
           >
-            Annuler
+            Cancel
           </Button>
           <Button
             color="error"
@@ -1054,14 +1113,7 @@ export default function TodosPage() {
               setProjectToDelete(null);
             }}
           >
-            {deleteProjectLoading ? (
-              <CircularProgress
-                size={20}
-                color="inherit"
-              />
-            ) : (
-              'Supprimer'
-            )}
+            {deleteProjectLoading ? 'Deleting…' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>

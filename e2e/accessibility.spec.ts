@@ -66,20 +66,55 @@ test.describe('signed-in pages', () => {
         });
     }
 
-    test('the task list conforms with tasks in it', async ({ page }) => {
+    /** Creates a task in a project of the user's: the board shows no other task. */
+    async function boardTask(page: Page, name: string, priorisation: 'high' | 'medium' | 'low') {
         const created = await page.request.post('/items', {
-            data: { name: 'Write the accessibility statement', deadline: '2026-10-02', priorisation: 'high', status: 'todo' },
+            data: { name, deadline: '2026-10-02', priorisation, status: 'todo' },
         });
         expect(created.ok()).toBe(true);
-        // The board only shows tasks that belong to one of the user's projects.
         const { user } = await (await page.request.get('/auth/me')).json();
         const { project } = await (await page.request.post('/projects', { data: { name: 'Audit' } })).json();
         const linked = await page.request.post(`/projects/${project.id}/items`, {
             data: { taskKey: Number((await created.json()).id), userId: user.id },
         });
         expect(linked.ok()).toBe(true);
+    }
+
+    test('the board conforms with tasks of every priority in it', async ({ page }) => {
+        await boardTask(page, 'Write the accessibility statement', 'high');
+        await boardTask(page, 'Review the audit grid', 'medium');
+        await boardTask(page, 'Rehearse the demo', 'low');
         await page.goto('/todos');
-        await expect(page.getByText('Write the accessibility statement', { exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { level: 4, name: 'Review the audit grid' })).toBeVisible();
+        await expect(page.getByText('Priority: medium')).toBeVisible();
+        await expectNoViolations(page);
+    });
+
+    test('a card moves between columns from the keyboard, and the move is announced', async ({ page }) => {
+        await boardTask(page, 'Write the accessibility statement', 'high');
+        await page.goto('/todos');
+        const inProgress = page.getByRole('region', { name: /^In progress/ });
+        await expect(inProgress.getByRole('listitem')).toHaveCount(0);
+
+        await page.getByRole('combobox', { name: 'Status of Write the accessibility statement' }).focus();
+        await page.keyboard.press('Enter');
+        await page.getByRole('option', { name: 'In progress' }).press('Enter');
+
+        await expect(inProgress.getByRole('heading', { name: 'Write the accessibility statement' })).toBeVisible();
+        await expect(page.getByRole('status').filter({ hasText: 'moved to In progress' })).toBeAttached();
+        await expectNoViolations(page);
+    });
+
+    test('the add task dialog is a named dialog that fits a 320 px screen', async ({ page }) => {
+        await page.request.post('/projects', { data: { name: 'Audit' } });
+        await page.setViewportSize({ width: 320, height: 640 });
+        await page.goto('/todos');
+        await page.getByRole('button', { name: 'Add a task' }).click();
+        const dialog = page.getByRole('dialog', { name: 'Add a task' });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByLabel(/^Name/)).toBeFocused();
+        const box = await dialog.boundingBox();
+        expect(box && box.x >= 0 && box.x + box.width <= 320).toBe(true);
         await expectNoViolations(page);
     });
 
