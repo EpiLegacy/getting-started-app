@@ -239,7 +239,8 @@ services:
 # ---------------------------------------------------------------------------
 
 volumes:
-  # grafana-data:
-  # prometheus-data:
+  grafana-data:
+  prometheus-data:
   mysql-data:
   rabbitmq-data:
+  

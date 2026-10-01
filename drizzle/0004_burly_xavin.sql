@@ -19,6 +19,9 @@ CREATE TABLE `projects` (
 	CONSTRAINT `projects_id` PRIMARY KEY(`id`)
 );
 --> statement-breakpoint
+ALTER TABLE `todo_items` DROP FOREIGN KEY `todo_items_user_id_users_id_fk`;
+--> statement-breakpoint
+ALTER TABLE `todo_items` ADD `status` varchar(20) DEFAULT 'todo' NOT NULL;--> statement-breakpoint
 ALTER TABLE `project_items` ADD CONSTRAINT `project_items_project_id_projects_id_fk` FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `project_items` ADD CONSTRAINT `project_items_task_key_todo_items_task_key_fk` FOREIGN KEY (`task_key`) REFERENCES `todo_items`(`task_key`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE `project_members` ADD CONSTRAINT `project_members_project_id_projects_id_fk` FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

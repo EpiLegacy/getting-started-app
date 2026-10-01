@@ -1,8 +1,8 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "97641b4e-ae7a-4228-9cdf-cd308d907043",
-  "prevId": "81366a76-77ac-4ca6-920f-915005080c93",
+  "id": "0c62e4ea-5ead-44fc-b093-03bdb5be8ad0",
+  "prevId": "b16b2299-5c2a-4f4a-b9c2-8633fb59782a",
   "tables": {
     "notifications": {
       "name": "notifications",
@@ -48,6 +48,13 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -55,6 +62,14 @@
           "name": "idx_notifications_recipient",
           "columns": [
             "recipient_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_notifications_unsent": {
+          "name": "idx_notifications_unsent",
+          "columns": [
+            "sent_at",
             "created_at"
           ],
           "isUnique": false
@@ -553,21 +568,7 @@
           "isUnique": false
         }
       },
-      "foreignKeys": {
-        "todo_items_user_id_users_id_fk": {
-          "name": "todo_items_user_id_users_id_fk",
-          "tableFrom": "todo_items",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {
         "todo_items_task_key": {
           "name": "todo_items_task_key",
