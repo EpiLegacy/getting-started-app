@@ -20,6 +20,7 @@ jobs:
     name: Commit convention
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +52,7 @@ jobs:
   typecheck:
     name: Types
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +70,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -85,6 +88,9 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    # A suite that leaves a connection open keeps Jest alive after the last
+    # test. Without a limit, GitHub only stops the job after six hours.
+    timeout-minutes: 15
     # Disposable database for spec/integration. It lives as long as the job
     # and is only reachable from the runner.
     services:
@@ -223,6 +229,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -254,6 +261,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -318,6 +326,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [typecheck, lint, test, accessibility, build, docker]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       # Granted on this job alone rather than at workflow level, so that no
