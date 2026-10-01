@@ -48,8 +48,13 @@ export const notifications = mysqlTable(
         body: varchar('body', { length: 500 }).notNull(),
         readAt: datetime('read_at', { fsp: 3 }),
         createdAt: datetime('created_at', { fsp: 3 }).notNull(),
+        // Set by the email relay once the mail is sent; NULL means still pending.
+        sentAt: datetime('sent_at', { fsp: 3 }),
     },
-    table => [index('idx_notifications_recipient').on(table.recipientId, table.createdAt)],
+    table => [
+        index('idx_notifications_recipient').on(table.recipientId, table.createdAt),
+        index('idx_notifications_unsent').on(table.sentAt, table.createdAt),
+    ],
 );
 
 export const processedEvents = mysqlTable(
