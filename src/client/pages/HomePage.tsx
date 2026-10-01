@@ -26,10 +26,9 @@ export default function HomePage() {
                 <TodayOutlinedIcon color="primary" />
                 <Typography component="h2" variant="h6" fontWeight={700}>Due today</Typography>
               </Stack>
-              <Stack spacing={1.5}>
-                {dueToday.length ? dueToday.map(item => <Typography key={item.id}>{item.name || 'Untitled task'}</Typography>) :
-                  <Typography>No open tasks due today.</Typography>}
-              </Stack>
+              {dueToday.length ? <Stack component="ul" spacing={1.5} sx={{ m: 0, pl: 3 }}>
+                {dueToday.map(item => <Typography component="li" key={item.id}>{item.name || 'Untitled task'}</Typography>)}
+              </Stack> : <Typography>No open tasks due today.</Typography>}
             </Paper>
             <Paper sx={{ p: 3, flex: 1 }} elevation={2}>
               <Typography color="text.secondary" gutterBottom>Unresolved tasks</Typography>

@@ -7,8 +7,9 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageProvider: 'v8',
   // spec/integration needs a MySQL server: it has its own configuration,
-  // jest.integration.config.cjs (npm run test:integration).
-  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/spec/integration/'],
+  // jest.integration.config.cjs (npm run test:integration). e2e/ runs in a
+  // real browser through Playwright (npm run test:a11y).
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/spec/integration/', '<rootDir>/e2e/'],
   setupFiles: ['<rootDir>/spec/support/unit-env.ts'],
 
   /**

@@ -6,6 +6,7 @@
 - [Migration scripts](#scripts)
 - [Baseline migration](#baseline-migration-0000_silky_leosql)
 - [Task ownership](#task-ownership-0002_task_ownershipsql)
+- [Email notifications](#email-notifications-0003_notifications_sent_atsql)
 
 ## Move from legacy SQLite to MySQL
 
@@ -231,3 +232,16 @@ private tasks. Keep the authenticated API in place or take it offline while
 preparing an ownership-aware rollback; switching the persistence flag is not a
 security rollback. Task HTTP routes use Drizzle regardless of that flag, as the
 authentication routes already do.
+
+## Email notifications (`0003_notifications_sent_at.sql`)
+
+Adds a nullable `notifications.sent_at` and the `idx_notifications_unsent`
+index. The worker's email relay (`src/workers/notifications/emailRelay.ts`)
+sends rows where `sent_at IS NULL` and then sets it, instead of deleting them:
+notifications stay available for display, and a failed send is retried on the
+next run. Existing rows are backfilled with `sent_at = created_at`, so the
+first run does not mail notifications created before the relay existed.
+
+The relay runs only with `PERSISTENCE_DRIVER=drizzle` and a non-empty
+`SMTP_HOST`; without it the worker runs as before, with in-app notifications
+only. The change is additive: older application versions ignore the column.

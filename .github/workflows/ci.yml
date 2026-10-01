@@ -20,6 +20,7 @@ jobs:
     name: Commit convention
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +52,7 @@ jobs:
   typecheck:
     name: Types
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -68,6 +70,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -126,6 +129,9 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    # A suite that leaves a connection open keeps Jest alive after the last
+    # test. Without a limit, GitHub only stops the job after six hours.
+    timeout-minutes: 15
     # Disposable database for spec/integration. It lives as long as the job
     # and is only reachable from the runner.
     services:
@@ -186,9 +192,85 @@ jobs:
           path: coverage/
           if-no-files-found: warn
 
+  accessibility:
+    name: Accessibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # RGAA 4.1 (docs/accessibility.md): every page, signed in or not, is
+    # checked in Chromium by axe-core against the WCAG 2.1 A and AA rules,
+    # plus the keyboard checks axe cannot do. Signing up needs the real API,
+    # hence the same throwaway MySQL as the Tests job, and RabbitMQ for the
+    # outbox relay the server starts with.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-throwaway-root-password
+          MYSQL_DATABASE: todos_a11y
+          MYSQL_USER: todo_a11y
+          MYSQL_PASSWORD: ci-throwaway-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+          --health-start-period 30s
+      rabbitmq:
+        image: rabbitmq:4-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 10s
+          --health-retries 30
+    env:
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_USER: todo_a11y
+      MYSQL_PASSWORD: ci-throwaway-password
+      MYSQL_DB: todos_a11y
+      PERSISTENCE_DRIVER: drizzle
+      RABBITMQ_URL: amqp://guest:guest@127.0.0.1:5672
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Migrate the database
+        run: npm run db:migrate
+
+      - name: Build the application
+        run: |
+          npx tsc -p tsconfig.build.json
+          npm run build
+
+      - name: Audit every page
+        run: npm run test:a11y
+
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accessibility-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+
   build:
     name: Build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -220,6 +302,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -282,8 +365,9 @@ jobs:
     # Only from main, and only once every other job agrees. A published image
     # must correspond to a state the pipeline actually validated.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [typecheck, lint, migrations, test, build, docker]
+    needs: [typecheck, lint, migrations, test, accessibility, build, docker]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       # Granted on this job alone rather than at workflow level, so that no
