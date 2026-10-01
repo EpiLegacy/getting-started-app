@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "81366a76-77ac-4ca6-920f-915005080c93",
+  "id": "b16b2299-5c2a-4f4a-b9c2-8633fb59782a",
   "prevId": "bff0358b-3575-4f4d-88c5-1f6be900e177",
   "tables": {
     "notifications": {
@@ -48,6 +48,13 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "datetime(3)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -55,6 +62,14 @@
           "name": "idx_notifications_recipient",
           "columns": [
             "recipient_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_notifications_unsent": {
+          "name": "idx_notifications_unsent",
+          "columns": [
+            "sent_at",
             "created_at"
           ],
           "isUnique": false
@@ -208,207 +223,6 @@
           "columns": [
             "event_id",
             "handler"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "project_items": {
-      "name": "project_items",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "char(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "task_key": {
-          "name": "task_key",
-          "type": "int unsigned",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "idx_project_items_task": {
-          "name": "idx_project_items_task",
-          "columns": [
-            "task_key"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "project_items_project_id_projects_id_fk": {
-          "name": "project_items_project_id_projects_id_fk",
-          "tableFrom": "project_items",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_items_task_key_todo_items_task_key_fk": {
-          "name": "project_items_task_key_todo_items_task_key_fk",
-          "tableFrom": "project_items",
-          "tableTo": "todo_items",
-          "columnsFrom": [
-            "task_key"
-          ],
-          "columnsTo": [
-            "task_key"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "project_items_project_id_task_key_pk": {
-          "name": "project_items_project_id_task_key_pk",
-          "columns": [
-            "project_id",
-            "task_key"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "project_members": {
-      "name": "project_members",
-      "columns": {
-        "project_id": {
-          "name": "project_id",
-          "type": "char(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "char(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "joined_at": {
-          "name": "joined_at",
-          "type": "datetime(3)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP(3)"
-        }
-      },
-      "indexes": {
-        "idx_project_members_user": {
-          "name": "idx_project_members_user",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "project_members_project_id_projects_id_fk": {
-          "name": "project_members_project_id_projects_id_fk",
-          "tableFrom": "project_members",
-          "tableTo": "projects",
-          "columnsFrom": [
-            "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_members_user_id_users_id_fk": {
-          "name": "project_members_user_id_users_id_fk",
-          "tableFrom": "project_members",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "project_members_project_id_user_id_pk": {
-          "name": "project_members_project_id_user_id_pk",
-          "columns": [
-            "project_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "projects": {
-      "name": "projects",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "char(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "char(36)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "datetime(3)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "projects_owner_id_users_id_fk": {
-          "name": "projects_owner_id_users_id_fk",
-          "tableFrom": "projects",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "projects_id": {
-          "name": "projects_id",
-          "columns": [
-            "id"
           ]
         }
       },

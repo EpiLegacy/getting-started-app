@@ -70,6 +70,9 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+# Read by build/scripts/migrate.js, so a deployment migrates the database with
+# the same image it then starts (docs/deployment.md).
+COPY drizzle ./drizzle
 
 # TEMPORARY: the "node" user cannot write to /etc/todos, the default SQLite
 # path. Goes away once MySQL is the only supported engine.

@@ -63,9 +63,8 @@ docker pull ghcr.io/epilegacy/getting-started-app:1.1.0
 Never delete or re-point a released tag to work around a bad build. Publish the
 fix as a new patch version, so the history of what ran stays readable.
 
-## What is not automated yet
+## Deployment
 
-Nothing deploys. The pipeline delivers a verified, versioned, retrievable
-artefact, which is where continuous delivery stops until the team decides where
-the application runs. Once a target exists, the deployment step consumes the
-tags above; it does not change how they are produced.
+A successful release is deployed to production automatically by
+`.github/workflows/deploy.yml`, which consumes the tags above. See the
+[deployment guide](deployment.md).

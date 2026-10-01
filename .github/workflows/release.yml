@@ -20,6 +20,7 @@ jobs:
   verify:
     name: Verify the tagged commit
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # The same disposable database as the Tests job in ci.yml.
     services:
       mysql:
@@ -69,6 +70,7 @@ jobs:
     name: Publish and release
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write   # creating the GitHub release
       packages: write   # pushing to the registry

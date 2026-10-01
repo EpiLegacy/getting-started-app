@@ -371,7 +371,9 @@ export default function TodosPage() {
         >
           <TextField
             size="small"
-            label="Rechercher une tâche"
+            label="Search by name"
+            type="search"
+            variant="outlined"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
