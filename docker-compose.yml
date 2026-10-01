@@ -217,6 +217,11 @@ services:
       MYSQL_USER: ${MYSQL_USER:-todo}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-todo_dev_password}
       MYSQL_DB: ${MYSQL_DB:-todos}
+      # Optional: an empty SMTP_HOST disables the email relay.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
 
       RABBITMQ_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672
 

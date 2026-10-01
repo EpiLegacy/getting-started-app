@@ -33,3 +33,7 @@ Thumbs.db
 *.swp
 # Reports written by npm run db:merge-sqlite
 merge-report-*.json
+
+# Playwright (npm run test:a11y)
+playwright-report/
+test-results/

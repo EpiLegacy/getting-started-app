@@ -49,4 +49,8 @@ module.exports = {
   maxWorkers: 1,
   // Some scenarios wait on purpose, for a lock or for the relay.
   testTimeout: 30000,
+  // A suite whose setup throws never reaches the afterAll that ends its pool,
+  // and Jest then waits on that socket forever. The failures are already
+  // reported by then: exit with them instead of hanging the CI job.
+  forceExit: true,
 };

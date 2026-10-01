@@ -9,6 +9,7 @@ Accounts and task ownership require MySQL with migrations applied.
 - [Contribute](#contribute)
 - [Backend API reference](docs/api.md)
 - [Grafana dashboard and monitoring](docs/monitoring.md)
+- [Accessibility (RGAA audit and statement)](docs/accessibility.md)
 - [Database migrations](drizzle/README.md)
 - [Releases](docs/release.md) and [deployment](docs/deployment.md)
 
