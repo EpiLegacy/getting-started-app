@@ -243,6 +243,7 @@ jobs:
   rehearsal:
     name: Deployment rehearsal
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       APP_IMAGE: legacy-kanban
       DEPLOY_PULL: '0'

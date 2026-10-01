@@ -27,6 +27,7 @@ jobs:
     # A failed release published nothing, so there is nothing to deploy.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # The environment holds the server's address and SSH key, and records
     # every deployment on the repository's Environments page.
     environment:
