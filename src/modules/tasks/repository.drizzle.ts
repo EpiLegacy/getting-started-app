@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
 import { projectItems, projectMembers, projects, todoItems } from '../../infrastructure/db/schema';
 import { enqueue } from '../../infrastructure/outbox/outboxRepository.drizzle';
@@ -29,10 +29,18 @@ export const taskRepository: TaskRepository = {
             .where(eq(todoItems.userId, userId)).orderBy(asc(todoItems.taskKey));
         return rows.map(toTask);
     },
-    async listUnassigned() {
-        const rows = await getDb().select().from(todoItems)
-            .where(isNull(todoItems.userId)).orderBy(asc(todoItems.taskKey));
-        return rows.map(toTask);
+    async listUnassigned(userId) {
+        const rows = await getDb().select({ task: todoItems, projectId: projectItems.projectId })
+            .from(todoItems).leftJoin(projectItems, eq(projectItems.taskKey, todoItems.taskKey))
+            .where(sql`(
+                (${projectItems.projectId} IS NULL AND (${todoItems.userId} IS NULL OR ${todoItems.userId} = ${userId}))
+                OR (${todoItems.userId} IS NULL AND EXISTS (
+                    SELECT 1 FROM ${projectMembers}
+                    WHERE ${projectMembers.projectId} = ${projectItems.projectId}
+                    AND ${projectMembers.userId} = ${userId}
+                ))
+            )`).orderBy(asc(todoItems.taskKey));
+        return rows.map(row => ({ ...toTask(row.task), projectId: row.projectId }));
     },
     async create(userId, input) {
         const task = syncCompletion(input);
@@ -40,11 +48,28 @@ export const taskRepository: TaskRepository = {
             .values({ ...task, id: randomUUID(), userId }).$returningId();
         return { ...task, id: String(taskKey), userId };
     },
-    async claim(id, userId) {
-        // One conditional write: competing claims cannot overwrite the winner.
-        const [result] = await getDb().update(todoItems).set({ userId })
-            .where(and(eq(todoItems.taskKey, id), isNull(todoItems.userId)));
-        return result.affectedRows === 1;
+    async claim(id, userId, projectId, assigneeId) {
+        return transaction(async tx => {
+            const [task] = await tx.select().from(todoItems)
+                .where(eq(todoItems.taskKey, id)).for('update');
+            if (!task) return false;
+            const links = await tx.select().from(projectItems)
+                .where(eq(projectItems.taskKey, id)).for('update');
+            // Only incomplete assignments can be repaired. Existing project links stay intact.
+            if (links.length && task.userId !== null) return false;
+            if (!links.length && task.userId !== null && task.userId !== userId) return false;
+            if (links.length && !links.some(link => link.projectId === projectId)) return false;
+            // Lock memberships through the write so a concurrent removal cannot invalidate the choice.
+            for (const targetProject of new Set([projectId, ...links.map(link => link.projectId)])) {
+                const members = await tx.select().from(projectMembers)
+                    .where(eq(projectMembers.projectId, targetProject)).for('update');
+                if (!members.some(member => member.userId === assigneeId)) return false;
+                if (targetProject === projectId && !members.some(member => member.userId === userId)) return false;
+            }
+            if (!links.length) await tx.insert(projectItems).values({ projectId, taskKey: id });
+            await tx.update(todoItems).set({ userId: assigneeId }).where(eq(todoItems.taskKey, id));
+            return true;
+        });
     },
     async update(id, userId, input, correlationId) {
         return transaction(async tx => {
@@ -98,7 +123,7 @@ export const taskRepository: TaskRepository = {
                     todoItems,
                     eq(todoItems.taskKey, projectItems.taskKey),
                 )
-                .where(eq(projectMembers.userId, userId))
+                .where(and(eq(projectMembers.userId, userId), isNotNull(todoItems.userId)))
         );
     },
 };

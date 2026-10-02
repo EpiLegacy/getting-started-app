@@ -4,6 +4,17 @@
 - **Date:** 2026-09-24 (documentation date)
 - **Related documents:** [Drizzle decision](0001-adopter-drizzle-orm.md); [ownership migration](../../drizzle/0002_task_ownership.sql); [migration runbook](../../drizzle/README.md#move-from-legacy-sqlite-to-mysql); [API reference](../api.md)
 
+## Project assignment update (2026-10-02)
+
+The original user-only claiming policy below is superseded by the
+[assignment repair API](../api.md#repairing-incomplete-task-assignments).
+Claims now require a project and a member of that project. Incomplete tasks
+appear in a separate attention section with warnings for missing projects or
+users. Projectless owned tasks are repairable only by their owner; ownerless
+project tasks are repairable by project members. Only tasks with neither
+assignment remain globally claimable. Repairs are transactional and retain
+existing project links.
+
 ## Context
 
 Before authentication, todos belonged to a shared anonymous list. Existing records contain no reliable account identity, so introducing users does not tell us who originally created or should own each task.

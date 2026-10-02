@@ -11,12 +11,14 @@ import { connect, dropTables } from './support/database';
 
 let app: Server;
 let connection: Connection;
-const tables = ['todo_items', 'sessions', 'users', 'outbox_events', 'notifications', 'processed_events'];
+const tables = ['project_items', 'project_members', 'projects', 'todo_items', 'sessions', 'users', 'outbox_events', 'notifications', 'processed_events'];
 const fields = { name: 'My task', completed: false, deadline: '2026-10-01', priorisation: 'high', status: 'todo' };
 let alice: ReturnType<typeof request.agent>;
 let bob: ReturnType<typeof request.agent>;
 let aliceId: string;
 let bobId: string;
+let aliceProject: string;
+let bobProject: string;
 
 async function migrate(file: string) {
     for (const sql of readFileSync(path.join(__dirname, '../../drizzle', file), 'utf8').split('--> statement-breakpoint')) {
@@ -87,6 +89,8 @@ describe('authenticated task API', () => {
         const password = 'correct horse battery staple';
         aliceId = (await alice.post('/auth/register').send({ email: 'alice@example.com', password })).body.user.id;
         bobId = (await bob.post('/auth/register').send({ email: 'bob@example.com', password })).body.user.id;
+        aliceProject = (await alice.post('/projects').send({ name: 'Alice project' })).body.project.id;
+        bobProject = (await bob.post('/projects').send({ name: 'Bob project' })).body.project.id;
     });
 
     test('every operation requires a valid session', async () => {
@@ -107,7 +111,7 @@ describe('authenticated task API', () => {
         expect((await bob.get('/items/unassigned')).body).toEqual([]);
         expect((await bob.put(`/items/${created.body.id}`).send(fields)).status).toBe(404);
         expect((await bob.delete(`/items/${created.body.id}`)).status).toBe(404);
-        expect((await bob.post(`/items/${created.body.id}/claim`)).status).toBe(409);
+        expect((await bob.post(`/items/${created.body.id}/claim`).send({ projectId: bobProject, userId: bobId })).status).toBe(409);
         expect((await alice.get('/items')).body).toEqual([created.body]);
     });
 
@@ -117,11 +121,11 @@ describe('authenticated task API', () => {
         expect(tasks).toHaveLength(3);
         expect((await alice.put(`/items/${tasks[0].id}`).send(fields)).status).toBe(404);
         expect((await alice.delete(`/items/${tasks[0].id}`)).status).toBe(404);
-        expect((await alice.post(`/items/${tasks[0].id}/claim`)).status).toBe(204);
-        expect((await bob.post(`/items/${tasks[2].id}/claim`)).status).toBe(204);
+        expect((await alice.post(`/items/${tasks[0].id}/claim`).send({ projectId: aliceProject, userId: aliceId })).status).toBe(204);
+        expect((await bob.post(`/items/${tasks[2].id}/claim`).send({ projectId: bobProject, userId: bobId })).status).toBe(204);
         expect((await bob.get('/items/unassigned')).body).toEqual([tasks[1]]);
-        expect((await alice.get('/items')).body).toEqual([{ ...tasks[0], userId: aliceId }]);
-        expect((await bob.get('/items')).body).toEqual([{ ...tasks[2], userId: bobId }]);
+        expect((await alice.get('/items')).body).toEqual([expect.objectContaining({ id: tasks[0].id, userId: aliceId })]);
+        expect((await bob.get('/items')).body).toEqual([expect.objectContaining({ id: tasks[2].id, userId: bobId })]);
         const stored = await rows('SELECT id, name, completed FROM todo_items ORDER BY task_key');
         expect((await bob.patch(`/items/${tasks[2].id}`).send({ completed: true })).status).toBe(200);
         expect((await alice.patch(`/items/${tasks[2].id}`).send({ completed: false })).status).toBe(404);
@@ -131,13 +135,32 @@ describe('authenticated task API', () => {
     test('concurrent claims have exactly one winner and cannot transfer ownership', async () => {
         await connection.query("INSERT INTO todo_items (name) VALUES ('Claim me')");
         const [task] = (await alice.get('/items/unassigned')).body;
-        const results = await Promise.all([alice.post(`/items/${task.id}/claim`), bob.post(`/items/${task.id}/claim`)]);
+        const results = await Promise.all([alice.post(`/items/${task.id}/claim`).send({ projectId: aliceProject, userId: aliceId }), bob.post(`/items/${task.id}/claim`).send({ projectId: bobProject, userId: bobId })]);
         expect(results.map(result => result.status).sort()).toEqual([204, 409]);
         const owner = results[0].status === 204 ? aliceId : bobId;
         expect((await rows('SELECT user_id FROM todo_items'))[0].user_id).toBe(owner);
-        expect((await alice.post(`/items/${task.id}/claim`)).status).toBe(409);
-        expect((await bob.post(`/items/${task.id}/claim`)).status).toBe(409);
+        expect((await alice.post(`/items/${task.id}/claim`).send({ projectId: aliceProject, userId: aliceId })).status).toBe(409);
+        expect((await bob.post(`/items/${task.id}/claim`).send({ projectId: bobProject, userId: bobId })).status).toBe(409);
         expect((await alice.get('/items/unassigned')).body).toEqual([]);
+    });
+
+    test('repairs partial assignments while enforcing project visibility and membership', async () => {
+        const own = (await alice.post('/items').send(fields)).body;
+        expect((await alice.get('/items/unassigned')).body).toEqual([{ ...own, projectId: null }]);
+        expect((await bob.get('/items/unassigned')).body).toEqual([]);
+        expect((await alice.post(`/items/${own.id}/claim`).send({ projectId: aliceProject, userId: bobId })).status).toBe(409);
+        expect((await alice.post(`/items/${own.id}/claim`).send({ projectId: bobProject, userId: bobId })).status).toBe(409);
+        expect((await rows('SELECT * FROM project_items'))).toEqual([]);
+        expect((await alice.post(`/items/${own.id}/claim`).send({ projectId: aliceProject, userId: aliceId })).status).toBe(204);
+        await connection.query('UPDATE todo_items SET user_id = NULL WHERE task_key = ?', [own.id]);
+        expect((await alice.get('/items/forUser')).body).toEqual([]);
+        expect((await bob.get('/items/unassigned')).body).toEqual([]);
+        expect((await alice.get('/items/unassigned')).body[0]).toMatchObject({ id: own.id, projectId: aliceProject, userId: null });
+        expect((await bob.post(`/items/${own.id}/claim`).send({ projectId: bobProject, userId: bobId })).status).toBe(409);
+        await alice.post(`/projects/${aliceProject}/members`).send({ email: 'bob@example.com' });
+        expect((await alice.post(`/items/${own.id}/claim`).send({ projectId: aliceProject, userId: bobId })).status).toBe(204);
+        expect((await alice.get('/items/unassigned')).body).toEqual([]);
+        expect((await alice.get('/items/forUser')).body[0]).toMatchObject({ taskKey: Number(own.id), userId: bobId });
     });
 
     test('owner edits retain deadlines and priorities and emit one completion event with their identity', async () => {
@@ -231,8 +254,8 @@ describe('authenticated task API', () => {
         await alice.post('/items').send(fields);
         const bobTask = await bob.post('/items').send(fields);
         await connection.query("INSERT INTO todo_items (name) VALUES ('Claimed'), ('Still unassigned')");
-        const unassigned = (await alice.get('/items/unassigned')).body;
-        await alice.post(`/items/${unassigned[0].id}/claim`);
+        const unassigned = (await alice.get('/items/unassigned')).body.filter((task: { userId: string | null }) => task.userId === null);
+        await alice.post(`/items/${unassigned[0].id}/claim`).send({ projectId: aliceProject, userId: aliceId });
         const otherDevice = request.agent(app);
         await otherDevice.post('/auth/login').send({ email: 'alice@example.com', password });
         const denied = await alice.delete('/auth/me').send({ password: 'wrong' });
@@ -243,7 +266,7 @@ describe('authenticated task API', () => {
         expect((await otherDevice.get('/items')).status).toBe(401);
         expect((await request(app).post('/auth/login').send({ email: 'alice@example.com', password })).status).toBe(401);
         expect((await bob.get('/items')).body).toEqual([bobTask.body]);
-        expect((await bob.get('/items/unassigned')).body).toEqual([unassigned[1]]);
+        expect((await bob.get('/items/unassigned')).body).toEqual([ { ...bobTask.body, projectId: null }, unassigned[1] ]);
         expect((await rows('SELECT id FROM users')).map(row => row.id)).toEqual([bobId]);
         expect((await rows('SELECT user_id FROM sessions')).every(row => row.user_id === bobId)).toBe(true);
         expect(await rows('SELECT * FROM todo_items')).toHaveLength(2);

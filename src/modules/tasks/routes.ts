@@ -37,7 +37,7 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
         res.json(await repository.list(currentUser(res).id));
     });
     router.get('/unassigned', async (_req, res) => {
-        res.json(await repository.listUnassigned());
+        res.json(await repository.listUnassigned(currentUser(res).id));
     });
     router.post('/', async (req, res) => {
         const parsed = taskInput.safeParse({ ...req.body, completed: false });
@@ -56,8 +56,13 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
         res.locals.taskId = parsed.data;
         next();
     });
-    router.post('/:id/claim', async (_req, res) => {
-        const claimed = await repository.claim(res.locals.taskId, currentUser(res).id);
+    router.post('/:id/claim', async (req, res) => {
+        const parsed = z.object({ projectId: z.string().uuid(), userId: z.string().uuid() }).safeParse(req.body);
+        if (!parsed.success) {
+            res.status(400).json({ error: 'invalid_assignment', issues: parsed.error.issues });
+            return;
+        }
+        const claimed = await repository.claim(res.locals.taskId, currentUser(res).id, parsed.data.projectId, parsed.data.userId);
         if (!claimed) {
             // Do not disclose who owns a task (or whether a private task exists).
             res.status(409).json({ error: 'task_unavailable' });

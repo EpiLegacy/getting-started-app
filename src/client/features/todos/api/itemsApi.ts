@@ -25,6 +25,6 @@ export const itemsApi = {
     method: 'PATCH', body: JSON.stringify({ completed }),
   }),
   remove: (id: string) => request<void>(`/items/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  claim: (id: string) => request<void>(`/items/${encodeURIComponent(id)}/claim`, { method: 'POST' }),
+  claim: (id: string, projectId: string, userId: string) => request<void>(`/items/${encodeURIComponent(id)}/claim`, { method: 'POST', body: JSON.stringify({ projectId, userId }) }),
   getForUser: (signal?: AbortSignal) => request<TaskForUser[]>('/items/forUser', { signal }),
 };
