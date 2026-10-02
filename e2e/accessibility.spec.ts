@@ -134,6 +134,19 @@ test.describe('signed-in pages', () => {
         await expect(page.getByRole('dialog')).toBeVisible();
         await expectNoViolations(page);
     });
+
+    test('the notification bell opens a named dialog and gives the focus back', async ({ page }) => {
+        await page.goto('/');
+        const bell = page.getByRole('button', { name: 'Notifications' });
+        await bell.click();
+        const dialog = page.getByRole('dialog', { name: 'Notifications' });
+        await expect(dialog).toBeVisible();
+        await expect(dialog.getByText('No notifications yet')).toBeVisible();
+        await expectNoViolations(page);
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden();
+        await expect(bell).toBeFocused();
+    });
 });
 
 test.describe('keyboard', () => {

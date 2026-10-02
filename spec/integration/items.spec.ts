@@ -142,7 +142,7 @@ describe('authenticated task API', () => {
 
     test('owner edits retain deadlines and priorities and emit one completion event with their identity', async () => {
         const created = await alice.post('/items').send(fields);
-        const update = { ...fields, name: 'Done', completed: true, deadline: '2026-10-02', priorisation: 'low', userId: bobId };
+        const update = { ...fields, name: 'Done', completed: true, status: 'completed', deadline: '2026-10-02', priorisation: 'low', userId: bobId };
         for (let i = 0; i < 2; i++) {
             const result = await alice.put(`/items/${created.body.id}`).send(update);
             expect(result.status).toBe(200);
@@ -163,6 +163,48 @@ describe('authenticated task API', () => {
             expect((await alice.get('/items')).body[0].completed).toBe(false);
             expect(await rows('SELECT * FROM outbox_events')).toEqual([]);
         } finally { enqueue.mockRestore(); logged.mockRestore(); }
+    });
+
+    test('moving a card to Completed completes the task and emits one event per completion', async () => {
+        const created = await alice.post('/items').send(fields);
+        const move = (body: object) => alice.patch(`/items/${created.body.id}`).send(body);
+        const events = async () => (await rows('SELECT aggregate_id FROM outbox_events')).length;
+
+        expect((await move({ status: 'inProgress' })).body).toMatchObject({ status: 'inProgress', completed: false });
+        expect(await events()).toBe(0);
+        expect((await move({ status: 'completed' })).body).toMatchObject({ status: 'completed', completed: true });
+        expect((await move({ status: 'completed' })).status).toBe(200);
+        expect(await events()).toBe(1);
+
+        // Reopening and completing again is a new completion; completed alone moves the card.
+        expect((await move({ completed: false })).body).toMatchObject({ status: 'todo', completed: false });
+        expect((await move({ completed: true })).body).toMatchObject({ status: 'completed', completed: true });
+        expect(await events()).toBe(2);
+        expect((await alice.get('/items')).body[0]).toMatchObject({ status: 'completed', completed: true });
+    });
+
+    test('a completed flag that contradicts the status is rejected without writing anything', async () => {
+        const created = await alice.post('/items').send(fields);
+        expect((await alice.put(`/items/${created.body.id}`).send({ ...fields, completed: true })).status).toBe(400);
+        expect((await alice.patch(`/items/${created.body.id}`).send({ completed: false, status: 'completed' })).status).toBe(400);
+        expect(await rows('SELECT completed, status FROM todo_items')).toEqual([{ completed: 0, status: 'todo' }]);
+        expect(await rows('SELECT * FROM outbox_events')).toEqual([]);
+    });
+
+    test('migration 0005 aligns completed with the Kanban column of existing rows', async () => {
+        await connection.query(`INSERT INTO todo_items (id, completed, status) VALUES
+            ('legacy-done', 1, 'todo'), ('moved-done', 0, 'completed'), ('moved-back', 1, 'inProgress'),
+            ('open', 0, 'todo'), ('null-open', NULL, 'todo'), ('null-done', NULL, 'completed')`);
+        await migrate('0005_sync_task_completion.sql');
+        expect(await rows('SELECT id, completed, status FROM todo_items ORDER BY task_key')).toEqual([
+            { id: 'legacy-done', completed: 1, status: 'completed' },
+            { id: 'moved-done', completed: 1, status: 'completed' },
+            { id: 'moved-back', completed: 0, status: 'inProgress' },
+            { id: 'open', completed: 0, status: 'todo' },
+            { id: 'null-open', completed: null, status: 'todo' },
+            { id: 'null-done', completed: 1, status: 'completed' },
+        ]);
+        expect(await rows('SELECT * FROM outbox_events')).toEqual([]);
     });
 
     test('deleting an owner cannot turn private tasks into shared unassigned tasks', async () => {

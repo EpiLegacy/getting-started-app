@@ -90,3 +90,20 @@ test('rejects malformed ids and task bodies', async () => {
     expect((await request(await app()).put('/items/12').set('Cookie', 'sid=valid').send({ ...input, priorisation: 'bad' })).status).toBe(400);
     expect(repository.claim).not.toHaveBeenCalled();
 });
+
+test('rejects a completed flag that contradicts the status, and lets a card move with its status alone', async () => {
+    const contradictions = [
+        request(await app()).put('/items/12').set('Cookie', 'sid=valid').send({ ...input, completed: true }),
+        request(await app()).patch('/items/12').set('Cookie', 'sid=valid').send({ completed: false, status: 'completed' }),
+    ];
+    for (const res of await Promise.all(contradictions)) {
+        expect(res.status).toBe(400);
+        expect(res.body.error).toBe('invalid_task');
+    }
+    expect(repository.update).not.toHaveBeenCalled();
+
+    repository.update.mockResolvedValueOnce({ ...input, priorisation: 'medium', completed: true, status: 'completed', id: '12', userId: 'alice' });
+    const moved = await request(await app()).patch('/items/12').set('Cookie', 'sid=valid').set('x-correlation-id', 'test').send({ status: 'completed' });
+    expect(moved.status).toBe(200);
+    expect(repository.update).toHaveBeenCalledWith(12, 'alice', { status: 'completed' }, 'test');
+});

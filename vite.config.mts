@@ -15,6 +15,7 @@ export default defineConfig({
             '/items': 'http://localhost:3000',
             '/auth': 'http://localhost:3000',
             '/projects': 'http://localhost:3000',
+            '/notifications': 'http://localhost:3000',
         },
     },
 });

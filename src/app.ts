@@ -8,6 +8,8 @@ import { createMetrics } from './infrastructure/metrics';
 import { createProjectService } from './modules/projects/service';
 import { drizzleProjectRepository } from './modules/projects/repository.drizzle';
 import { createProjectsRouter } from './modules/projects/routes';
+import { notificationRepository } from './modules/notifications/repository.drizzle';
+import { createNotificationRouter } from './modules/notifications/routes';
 
 const projectService = createProjectService(drizzleProjectRepository);
 
@@ -28,11 +30,12 @@ export function createApp(authService: AuthService | undefined, secureCookies: b
 
     app.use('/items', createTaskRouter(authService, taskRepository));
     app.use('/projects', createProjectsRouter(projectService, authService));
+    app.use('/notifications', createNotificationRouter(authService, notificationRepository));
 
     // Serve the single-page application when a frontend route is opened directly.
     app.get('/{*path}', (req, res, next) => {
         // Preserve API and asset 404s instead of responding with the HTML shell.
-        if (/^\/(items|auth|health|metrics|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
+        if (/^\/(items|auth|notifications|health|metrics|assets)(\/|$)/.test(req.path) || path.extname(req.path) || !req.accepts('html')) {
             next();
             return;
         }

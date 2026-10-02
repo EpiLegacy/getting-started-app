@@ -36,6 +36,13 @@
       "when": 1790874865989,
       "tag": "0004_burly_xavin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1790954911652,
+      "tag": "0005_sync_task_completion",
+      "breakpoints": true
     }
   ]
 }

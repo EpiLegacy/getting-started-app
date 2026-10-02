@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { currentUser, requireAuth } from '../auth/routes';
 import type { AuthService } from '../auth/service';
+import { contradictsStatus } from './completion';
 import type { TaskRepository } from './types';
 
 const taskInput = z.object({
@@ -12,6 +13,11 @@ const taskInput = z.object({
     priorisation: z.enum(['high', 'medium', 'low']),
     status: z.enum(['todo', 'inProgress', 'completed']),
 });
+// A client may send completed, status or both, but never two that disagree.
+const agrees = (input: Parameters<typeof contradictsStatus>[0]) => !contradictsStatus(input);
+const disagreement = { error: 'completed must match status', path: ['completed'] };
+const replaceTask = taskInput.refine(agrees, disagreement);
+const patchTask = taskInput.partial().refine(input => Object.keys(input).length > 0).refine(agrees, disagreement);
 const taskId = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive().max(4294967295));
 
 export function createTaskRouter(service: AuthService | undefined, repository: TaskRepository): Router {
@@ -61,7 +67,7 @@ export function createTaskRouter(service: AuthService | undefined, repository: T
     });
     router.route('/:id').put(update).patch(update);
     async function update(req: Request, res: Response) {
-        const schema = req.method === 'PATCH' ? taskInput.partial().refine(input => Object.keys(input).length > 0) : taskInput;
+        const schema = req.method === 'PATCH' ? patchTask : replaceTask;
         const parsed = schema.safeParse(req.body);
         if (!parsed.success) {
             res.status(400).json({ error: 'invalid_task', issues: parsed.error.issues });
