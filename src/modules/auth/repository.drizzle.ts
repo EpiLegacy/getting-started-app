@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, lte, ne, notInArray } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
-import { projectItems, projectMembers, projects, sessions, todoItems, users } from '../../infrastructure/db/schema';
+import { notifications, projectItems, projectMembers, projects, sessions, todoItems, users } from '../../infrastructure/db/schema';
 import type { AuthRepository } from './types';
 
 /**
@@ -80,6 +80,9 @@ export const drizzleAuthRepository: AuthRepository = {
                         notInArray(todoItems.taskKey, inProject),
                     ),
                 );
+
+            // Personal data with no foreign key: recipient_id is not tied to users.
+            await tx.delete(notifications).where(eq(notifications.recipientId, id));
 
             await tx.delete(users).where(eq(users.id, id));
         });

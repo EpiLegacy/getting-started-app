@@ -19,18 +19,24 @@ Express. Auth and task responses use `Cache-Control: no-store`.
 | `POST /auth/logout` | No | — | `204`; revokes the supplied session and clears cookie, even if already signed out. |
 | `GET /auth/me` | Yes | — | `200 { "user": { "id": "…", "email": "…" } }`. |
 | `GET /auth/profile` | Yes | — | `200 { "user": { "id": "…", "email": "…", "createdAt": "…" } }`; ISO timestamp. |
-| `DELETE /auth/me` | Yes | `{ "password": "current password" }` | `204`; deletes account and all owned tasks, revokes every session, clears cookie. |
+| `DELETE /auth/me` | Yes | `{ "password": "current password" }` | `204`; deletes account, owned tasks and notifications, revokes every session, clears cookie. |
 | `GET /items` | Yes | — | `200` array of your tasks. |
 | `GET /items/unassigned` | Yes | — | `200` array of shared tasks with no owner. |
-| `POST /items` | Yes | `name`, `deadline`, `priorisation` | `201` created task; always starts with `completed: false`. |
+| `POST /items` | Yes | `name`, `deadline`, `priorisation`, `status` | `201` created task; `completed` follows `status`. |
 | `POST /items/:id/claim` | Yes | — | `204`; makes an unassigned task private to you. |
-| `PUT /items/:id` | Yes | All four task input fields below | `200` updated task. |
+| `PUT /items/:id` | Yes | All five task input fields below | `200` updated task. |
 | `PATCH /items/:id` | Yes | At least one task input field below | `200` updated task. |
 | `DELETE /items/:id` | Yes | — | `204`; deletes an owned task. |
+| `GET /notifications` | Yes | — | `200 { "notifications": [...], "unread": 2 }`; your 20 most recent, newest first. |
+| `POST /notifications/read` | Yes | — | `204`; marks all your notifications as read. |
 
-There is no single-task GET endpoint or public notifications endpoint. The active
-routers are [auth](../src/modules/auth/routes.ts) and
-[tasks](../src/modules/tasks/routes.ts), mounted by [app.ts](../src/app.ts).
+There is no single-task GET endpoint. Notifications are created only by the
+notification worker, from `task.completed` events; the API reads them. The
+routers are [auth](../src/modules/auth/routes.ts),
+[tasks](../src/modules/tasks/routes.ts),
+[projects](../src/modules/projects/routes.ts) and
+[notifications](../src/modules/notifications/routes.ts), mounted by
+[app.ts](../src/app.ts).
 
 ## Payloads and ownership
 
@@ -45,9 +51,17 @@ Task input fields:
 | Field | Accepted value |
 | --- | --- |
 | `name` | String, trimmed to 1–255 characters. |
-| `completed` | Boolean; required for PUT, optional for PATCH, forced to `false` on POST. |
+| `status` | `"todo"`, `"inProgress"`, or `"completed"`: the Kanban column. Required for POST and PUT, optional for PATCH. |
+| `completed` | Boolean that always follows `status`: `true` exactly when `status` is `"completed"`. Required for PUT, optional for PATCH, ignored on POST. |
 | `deadline` | ISO date `YYYY-MM-DD`, or `""` for no deadline. |
 | `priorisation` | `"high"`, `"medium"`, or `"low"` (this spelling is part of the API). |
+
+`status` is the source of truth. A PATCH may send either field: `status`
+alone moves the card and sets `completed` to match, `completed: true` alone
+moves the task to `"completed"`, and `completed: false` alone puts a
+completed task back in `"todo"`. A request whose `completed` and `status`
+disagree is rejected with `400 invalid_task`. Each transition to completed,
+whichever field caused it, emits one `task.completed` event.
 
 Example task response:
 
@@ -58,6 +72,7 @@ Example task response:
   "completed": false,
   "deadline": "2026-10-01",
   "priorisation": "high",
+  "status": "todo",
   "userId": "account-id"
 }
 ```
@@ -68,6 +83,18 @@ positive decimal integers at most `4294967295`. Only an owner can update or
 delete a task; claim an unassigned task first. Concurrent claims have one winner.
 PUT/PATCH optionally accept `x-correlation-id` for event tracing (maximum 64
 characters used); the server generates one if omitted.
+
+Example notification, as listed by `GET /notifications`:
+
+```json
+{
+  "id": "6f1c…",
+  "type": "task.completed",
+  "body": "Task \"Write documentation\" moved to Done",
+  "createdAt": "2026-10-02T14:05:12.345Z",
+  "read": false
+}
+```
 
 ## Errors
 

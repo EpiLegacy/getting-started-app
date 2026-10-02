@@ -7,6 +7,7 @@ Accounts and task ownership require MySQL with migrations applied.
 - [Set up the app](#set-up-the-app)
 - [Migrate legacy SQLite data to MySQL](drizzle/README.md#move-from-legacy-sqlite-to-mysql)
 - [Contribute](#contribute)
+- [Architecture](docs/architecture.md)
 - [Backend API reference](docs/api.md)
 - [Grafana dashboard and monitoring](docs/monitoring.md)
 - [Accessibility (RGAA audit and statement)](docs/accessibility.md)
@@ -176,7 +177,7 @@ and `coverage/integration/`.
 | --- | --- |
 | `src/client/app`, `src/client/pages` | Frontend providers, layout, routes, and screens. |
 | `src/client/features` | Auth and todo components, state, and API calls. |
-| `src/modules/auth`, `src/modules/tasks` | Active backend routes, services, and repositories. |
+| `src/modules/auth`, `src/modules/tasks`, `src/modules/projects`, `src/modules/notifications` | Active backend routes, services, and repositories. |
 | `src/infrastructure` | MySQL/Drizzle, RabbitMQ, and outbox infrastructure. |
 | `src/persistence` | Legacy and Drizzle persistence adapters. |
 | `src/workers/notifications` | Notification event consumer. |
@@ -191,6 +192,8 @@ and `/profile` require a session. Users can claim shared unassigned tasks, after
 which those tasks are private. Profile deletion requires the current password
 and permanently removes the account, its sessions, and all owned tasks.
 
+The [architecture overview](docs/architecture.md) describes the components,
+the event-driven workflow, the data model, and the delivery pipeline.
 Architecture decisions are recorded in:
 
 - [ADR 0001: Drizzle ORM](docs/adr/0001-adopter-drizzle-orm.md)

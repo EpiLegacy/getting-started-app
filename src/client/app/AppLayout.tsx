@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../features/auth/AuthProvider';
+import NotificationBell from '../features/notifications/NotificationBell';
 import { errorMessage } from '../lib/http';
 import { Alert, AppBar, Box, Button, Link as MuiLink, Toolbar, Typography } from '@mui/material';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
@@ -69,6 +70,7 @@ export default function AppLayout() {
                     <Typography component="p" variant="h6" fontWeight={700} sx={{ flexGrow: 1 }}>
                         {APP_NAME}
                     </Typography>
+                    {user && <NotificationBell />}
                     <Box component="nav" aria-label="Main navigation">
                         {/* RGAA 9.3: a menu is a list of links. */}
                         <Box component="ul" sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', listStyle: 'none', m: 0, p: 0 }}>

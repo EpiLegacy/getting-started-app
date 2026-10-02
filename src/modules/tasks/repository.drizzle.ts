@@ -5,6 +5,7 @@ import { projectItems, projectMembers, projects, todoItems } from '../../infrast
 import { enqueue } from '../../infrastructure/outbox/outboxRepository.drizzle';
 import { createEvent } from '../../shared/events/envelope';
 import { TASK_COMPLETED, eventCatalog } from '../../shared/events/catalog';
+import { syncCompletion } from './completion';
 import type { Task, TaskRepository } from './types';
 
 function toTask(row: typeof todoItems.$inferSelect): Task {
@@ -34,9 +35,10 @@ export const taskRepository: TaskRepository = {
         return rows.map(toTask);
     },
     async create(userId, input) {
+        const task = syncCompletion(input);
         const [{ taskKey }] = await getDb().insert(todoItems)
-            .values({ ...input, id: randomUUID(), userId }).$returningId();
-        return { ...input, id: String(taskKey), userId };
+            .values({ ...task, id: randomUUID(), userId }).$returningId();
+        return { ...task, id: String(taskKey), userId };
     },
     async claim(id, userId) {
         // One conditional write: competing claims cannot overwrite the winner.
@@ -48,18 +50,21 @@ export const taskRepository: TaskRepository = {
         return transaction(async tx => {
             const [current] = await tx.select().from(todoItems).where(owned(id, userId)).for('update');
             if (!current) return undefined;
-            await tx.update(todoItems).set(input).where(owned(id, userId));
-            if (input.completed && current.completed !== true) {
+            // Moving a card to Completed sends only `status`: the event follows
+            // the derived `completed`, on the transition only.
+            const changes = syncCompletion(input, current.status);
+            await tx.update(todoItems).set(changes).where(owned(id, userId));
+            if (changes.completed && current.completed !== true) {
                 await enqueue(tx, createEvent({
                     type: TASK_COMPLETED,
                     version: eventCatalog[TASK_COMPLETED].version,
                     aggregateId: String(id),
                     actorId: userId,
                     correlationId,
-                    payload: { taskId: String(id), name: input.name ?? current.name ?? '', completedAt: new Date().toISOString() },
+                    payload: { taskId: String(id), name: changes.name ?? current.name ?? '', completedAt: new Date().toISOString() },
                 }));
             }
-            return toTask({ ...current, ...input });
+            return toTask({ ...current, ...changes });
         });
     },
     async remove(id, userId) {

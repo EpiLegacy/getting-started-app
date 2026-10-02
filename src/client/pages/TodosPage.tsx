@@ -39,6 +39,7 @@ import { Project, projectApi } from '../features/todos/api/projectApi';
 import { TaskStatus } from '../../types';
 import { itemsApi } from '../features/todos/api/itemsApi';
 import { TaskForUser } from '../../modules/tasks/types';
+import { visuallyHidden } from '../lib/visuallyHidden';
 
 const kanbanColumns: {
   id: TaskStatus;
@@ -48,20 +49,6 @@ const kanbanColumns: {
     { id: 'inProgress', title: 'In progress' },
     { id: 'completed', title: 'Completed' },
   ];
-
-/** Read by screen readers, not shown (the usual "sr-only" pattern). */
-const visuallyHidden = {
-  position: 'absolute',
-  // Strings: in sx, a bare 1 means 100%.
-  width: '1px',
-  height: '1px',
-  margin: '-1px',
-  padding: 0,
-  border: 0,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap',
-} as const;
 
 const columnTitle = (status: TaskStatus) =>
   kanbanColumns.find(column => column.id === status)?.title ?? status;
