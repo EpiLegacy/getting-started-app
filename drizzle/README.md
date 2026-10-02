@@ -84,8 +84,8 @@ docker compose up -d --wait mysql
    ```
 
    This creates the account/session tables and gives tasks generated keys and
-   nullable ownership. Do not execute every SQL file manually: the journal is
-   authoritative, and `0001_complex_ben_urich.sql` is not journaled.
+   nullable ownership. Do not execute the SQL files manually: the journal is
+   authoritative.
 8. Verify the import report against source values and the target. In a MySQL
    client connected to the target database, check:
 
@@ -137,7 +137,8 @@ at application start-up (`src/index.ts` does not call it).
 
 - `npm run db:generate` — diffs `src/infrastructure/db/schema.ts` against the
   migration history in this folder and writes a new SQL file when they
-  differ. Schema-only: it does not connect to a database.
+  differ. Schema-only: it does not connect to a database. CI fails when it
+  would write anything: a schema change must come with its migration.
 - `npm run db:migrate` — applies the pending migrations in `drizzle/*.sql`,
   in order, tracked in the `__drizzle_migrations` table.
 - `npm run db:check` — fails if the migration history itself is inconsistent
@@ -206,10 +207,11 @@ rewriting or discarding any legacy values. The authenticated API exposes this
 key as a string `id`; clients must use the returned IDs, not cached legacy IDs.
 The ownership index covers both per-user and unassigned lists.
 
-The migration also reconciles `deadline` and `priorisation`: the earlier
-`0001_complex_ben_urich.sql` was not in the journal, although some deployments
-applied it manually. Migration 0002 adds those columns only where missing. Do
-not manually run every SQL file; `npm run db:migrate` follows the journal.
+The migration also reconciles `deadline` and `priorisation`: an earlier,
+unjournaled migration added them (since removed from this folder), and some
+deployments applied it manually. Migration 0002 adds those columns only where
+missing. Do not run the SQL files manually; `npm run db:migrate` follows the
+journal.
 
 Deployment:
 

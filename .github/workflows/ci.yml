@@ -85,6 +85,47 @@ jobs:
       # only fails on real defects. See eslint.config.mjs.
       - run: npm run lint
 
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Checks that the migration history itself is consistent. Like the next
+      # step, it reads files only and needs no database.
+      - run: npm run db:check
+
+      # schema.ts is what the code queries, but only drizzle/ ever reaches a
+      # database. Regenerating from a committed state must find nothing to
+      # write, otherwise a schema change was pushed without its migration.
+      #
+      # The exit code cannot be trusted: when a change looks like a rename,
+      # drizzle-kit needs a terminal to ask about it, prints an error, writes
+      # nothing and still exits 0. So the step also requires its "nothing to
+      # migrate" line; drizzle-kit is pinned, and a reworded line would fail
+      # the job rather than let a missing migration through.
+      - name: Check that the schema has its migration
+        run: |
+          output="$(npm run db:generate < /dev/null 2>&1)" || true
+          printf '%s\n' "$output"
+          if ! grep -q 'No schema changes, nothing to migrate' <<< "$output" \
+            || [ -n "$(git status --porcelain drizzle/)" ]; then
+            echo "::error title=Migration missing::src/infrastructure/db/schema.ts differs from the migrations in drizzle/. Run npm run db:generate locally and commit what it writes."
+            # Intent-to-add makes the new files show up in the diff. The
+            # snapshots are left out: hundreds of lines nobody reviews here.
+            git add --intent-to-add drizzle/
+            git --no-pager diff -- drizzle/ ':(exclude)drizzle/meta/*_snapshot.json'
+            exit 1
+          fi
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -416,7 +457,7 @@ jobs:
     # Only from main, and only once every other job agrees. A published image
     # must correspond to a state the pipeline actually validated.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [typecheck, lint, test, accessibility, build, docker, rehearsal]
+    needs: [typecheck, lint, migrations, test, accessibility, build, docker, rehearsal]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
