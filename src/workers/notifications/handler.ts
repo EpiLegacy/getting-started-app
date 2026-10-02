@@ -1,3 +1,4 @@
+import type { RowDataPacket } from 'mysql2/promise';
 import { randomUUID } from 'node:crypto';
 import { withTransaction } from '../../infrastructure/db/mysql';
 import type { EventEnvelope } from '../../shared/events/envelope';
@@ -6,13 +7,6 @@ import { TASK_COMPLETED, taskCompletedPayloadSchema } from '../../shared/events/
 export const HANDLER_NAME = 'notifications';
 
 export type HandlerOutcome = 'applied' | 'duplicate' | 'ignored';
-
-/**
- * Placeholder recipient: notifications are addressed to the actor, and until
- * authentication lands there is no user id to carry. Replaced by the project
- * members once User/Project exist.
- */
-const FALLBACK_RECIPIENT = 'demo-user';
 
 export async function handleTaskEvent(envelope: EventEnvelope): Promise<HandlerOutcome> {
     if (envelope.type !== TASK_COMPLETED) return 'ignored';
@@ -33,17 +27,20 @@ export async function handleTaskEvent(envelope: EventEnvelope): Promise<HandlerO
             throw error;
         }
 
-        await connection.execute(
-            `INSERT INTO notifications (id, recipient_id, type, body, created_at)
-             VALUES (?, ?, ?, ?, ?)`,
-            [
-                randomUUID(),
-                envelope.actorId ?? FALLBACK_RECIPIENT,
-                envelope.type,
-                `Task "${payload.name}" moved to Done`,
-                new Date(),
-            ],
+        const [recipients] = await connection.execute<(RowDataPacket & { userId: string })[]>(
+            `SELECT DISTINCT pm.user_id AS userId
+             FROM project_items pi
+             INNER JOIN project_members pm ON pm.project_id = pi.project_id
+             WHERE pi.task_key = ?`,
+            [(/^\d+$/.test(payload.taskId) ? Number(payload.taskId) : 0)],
         );
+        for (const { userId } of recipients) {
+            await connection.execute(
+                `INSERT INTO notifications (id, recipient_id, type, body, created_at)
+                 VALUES (?, ?, ?, ?, ?)`,
+                [randomUUID(), userId, envelope.type, `Task "${payload.name}" moved to Done`, new Date()],
+            );
+        }
 
         return 'applied';
     });

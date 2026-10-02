@@ -163,6 +163,48 @@ describe('authenticated task API', () => {
         expect((await alice.get('/items/forUser')).body[0]).toMatchObject({ taskKey: Number(own.id), userId: bobId });
     });
 
+    test('project members can change status but cannot edit other fields', async () => {
+        const task = (await alice.post('/items').send(fields)).body;
+        const change = (body: object) => bob.patch(`/items/${task.id}`).send(body);
+        expect((await change({ status: 'inProgress' })).status).toBe(404);
+        await alice.post(`/items/${task.id}/claim`).send({ projectId: aliceProject, userId: aliceId });
+        expect((await change({ status: 'inProgress' })).status).toBe(404);
+        await alice.post(`/projects/${aliceProject}/members`).send({ email: 'bob@example.com' });
+
+        expect((await change({ status: 'inProgress' })).body).toMatchObject({ status: 'inProgress', completed: false, userId: aliceId });
+        for (const extra of [{ name: 'Changed' }, { deadline: '2026-12-01' }, { priorisation: 'low' }]) {
+            expect((await change({ status: 'completed', ...extra })).status).toBe(404);
+        }
+        expect((await bob.put(`/items/${task.id}`).send(fields)).status).toBe(404);
+        for (let i = 0; i < 2; i++) {
+            expect((await change({ status: 'completed', completed: true })).status).toBe(200);
+        }
+        expect(await rows('SELECT actor_id, aggregate_id FROM outbox_events')).toEqual([
+            { actor_id: bobId, aggregate_id: task.id },
+        ]);
+        expect((await change({ completed: false })).body).toMatchObject({ status: 'todo', completed: false, userId: aliceId, name: fields.name });
+        await alice.delete(`/projects/${aliceProject}/members/${bobId}`);
+        expect((await change({ status: 'completed' })).status).toBe(404);
+        expect((await alice.get('/items')).body[0]).toMatchObject({ status: 'todo', completed: false });
+    });
+
+    test('project members can delete tasks, but outsiders and former members cannot', async () => {
+        const task = (await alice.post('/items').send(fields)).body;
+        const remove = () => bob.delete(`/items/${task.id}`);
+        expect((await remove()).status).toBe(404);
+        await alice.post(`/items/${task.id}/claim`).send({ projectId: aliceProject, userId: aliceId });
+        expect((await remove()).status).toBe(404);
+        await alice.post(`/projects/${aliceProject}/members`).send({ email: 'bob@example.com' });
+        await alice.delete(`/projects/${aliceProject}/members/${bobId}`);
+        expect((await remove()).status).toBe(404);
+        expect((await alice.get('/items')).body).toHaveLength(1);
+        await alice.post(`/projects/${aliceProject}/members`).send({ email: 'bob@example.com' });
+        expect((await remove()).status).toBe(204);
+        expect((await alice.get('/items')).body).toEqual([]);
+        expect(await rows('SELECT * FROM project_items')).toEqual([]);
+        expect((await remove()).status).toBe(404);
+    });
+
     test('owner edits retain deadlines and priorities and emit one completion event with their identity', async () => {
         const created = await alice.post('/items').send(fields);
         const update = { ...fields, name: 'Done', completed: true, status: 'completed', deadline: '2026-10-02', priorisation: 'low', userId: bobId };

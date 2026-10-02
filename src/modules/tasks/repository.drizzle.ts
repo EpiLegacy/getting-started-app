@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, or, sql } from 'drizzle-orm';
 import { getDb, transaction, unwrapErrors } from '../../infrastructure/db/drizzle';
 import { projectItems, projectMembers, projects, todoItems } from '../../infrastructure/db/schema';
 import { enqueue } from '../../infrastructure/outbox/outboxRepository.drizzle';
@@ -19,8 +19,6 @@ function toTask(row: typeof todoItems.$inferSelect): Task {
         status: row.status,
     };
 }
-
-const owned = (id: number, userId: string) => and(eq(todoItems.taskKey, id), eq(todoItems.userId, userId));
 
 /** Authenticated tasks always use MySQL, just like users and sessions. */
 export const taskRepository: TaskRepository = {
@@ -73,12 +71,23 @@ export const taskRepository: TaskRepository = {
     },
     async update(id, userId, input, correlationId) {
         return transaction(async tx => {
-            const [current] = await tx.select().from(todoItems).where(owned(id, userId)).for('update');
+            const [current] = await tx.select().from(todoItems).where(eq(todoItems.taskKey, id)).for('update');
             if (!current) return undefined;
+            if (current.userId !== userId) {
+                // Project membership permits status changes, not general edits.
+                const fields = Object.keys(input);
+                if (!fields.length || fields.some(field => field !== 'status' && field !== 'completed')) return undefined;
+                const [membership] = await tx.select({ projectId: projectMembers.projectId })
+                    .from(projectItems)
+                    .innerJoin(projectMembers, eq(projectMembers.projectId, projectItems.projectId))
+                    .where(and(eq(projectItems.taskKey, id), eq(projectMembers.userId, userId)))
+                    .limit(1).for('update');
+                if (!membership) return undefined;
+            }
             // Moving a card to Completed sends only `status`: the event follows
             // the derived `completed`, on the transition only.
             const changes = syncCompletion(input, current.status);
-            await tx.update(todoItems).set(changes).where(owned(id, userId));
+            await tx.update(todoItems).set(changes).where(eq(todoItems.taskKey, id));
             if (changes.completed && current.completed !== true) {
                 await enqueue(tx, createEvent({
                     type: TASK_COMPLETED,
@@ -93,7 +102,15 @@ export const taskRepository: TaskRepository = {
         });
     },
     async remove(id, userId) {
-        const [result] = await getDb().delete(todoItems).where(owned(id, userId));
+        const [result] = await getDb().delete(todoItems).where(and(
+            eq(todoItems.taskKey, id),
+            or(eq(todoItems.userId, userId), sql`EXISTS (
+                SELECT 1 FROM ${projectItems}
+                INNER JOIN ${projectMembers} ON ${projectMembers.projectId} = ${projectItems.projectId}
+                WHERE ${projectItems.taskKey} = ${todoItems.taskKey}
+                AND ${projectMembers.userId} = ${userId}
+            )`),
+        ));
         return result.affectedRows === 1;
     },
     async listForUser(userId: string) {
