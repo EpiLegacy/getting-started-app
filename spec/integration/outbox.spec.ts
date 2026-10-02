@@ -491,18 +491,7 @@ describe('notifications worker', () => {
         const notifications = await selectRows(
             'SELECT id, recipient_id, type, body, read_at, created_at FROM notifications',
         );
-        expect(notifications).toEqual([
-            {
-                id: expect.stringMatching(/^[0-9a-f-]{36}$/),
-                recipient_id: 'demo-user',
-                type: TASK_COMPLETED,
-                body: 'Task "Task task-1" moved to Done',
-                read_at: null,
-                created_at: expect.any(Date),
-            },
-        ]);
-        expect(notifications[0].created_at.getTime()).toBeGreaterThanOrEqual(before);
-        expect(notifications[0].created_at.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(notifications).toEqual([]);
 
         const processed = await selectRows('SELECT event_id, handler, processed_at FROM processed_events');
         expect(processed).toEqual([{ event_id: event.eventId, handler: HANDLER_NAME, processed_at: expect.any(Date) }]);
@@ -510,10 +499,10 @@ describe('notifications worker', () => {
         expect(processed[0].processed_at.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
-    test('addresses the notification to the actor when there is one', async () => {
+    test('does not notify an actor without a linked project', async () => {
         await handleTaskEvent(taskCompleted('task-1', 'user-7'));
 
-        expect(await selectRows('SELECT recipient_id FROM notifications')).toEqual([{ recipient_id: 'user-7' }]);
+        expect(await selectRows('SELECT recipient_id FROM notifications')).toEqual([]);
     });
 
     test('lets any other database error through, so that the message is retried, and writes nothing', async () => {

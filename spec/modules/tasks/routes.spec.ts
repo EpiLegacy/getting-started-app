@@ -51,7 +51,7 @@ test('lists only the session user and exposes unassigned tasks separately', asyn
     expect((await request(await app()).get('/items?userId=bob').set('Cookie', 'sid=valid')).status).toBe(200);
     expect(repository.list).toHaveBeenCalledWith('alice');
     expect((await request(await app()).get('/items/unassigned').set('Cookie', 'sid=valid')).status).toBe(200);
-    expect(repository.listUnassigned).toHaveBeenCalledTimes(1);
+    expect(repository.listUnassigned).toHaveBeenCalledWith('alice');
 });
 
 test('new task ownership comes from the session and unknown fields are stripped', async () => {
@@ -61,11 +61,18 @@ test('new task ownership comes from the session and unknown fields are stripped'
     expect(repository.create).toHaveBeenCalledWith('alice', input);
 });
 
-test('claim uses the authenticated user and reports stale claims as conflicts', async () => {
+const assignment = { projectId: '11111111-1111-4111-8111-111111111111', userId: '22222222-2222-4222-8222-222222222222' };
+
+test('claim requires a project and an assignee, and passes the authenticated actor', async () => {
     repository.claim.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    expect((await request(await app()).post('/items/12/claim').set('Cookie', 'sid=valid').send({ userId: 'bob' })).status).toBe(204);
-    expect(repository.claim).toHaveBeenCalledWith(12, 'alice');
-    const conflict = await request(await app()).post('/items/12/claim').set('Cookie', 'sid=valid');
+    const server = await app();
+    for (const body of [{}, { userId: assignment.userId }, { projectId: assignment.projectId }, { ...assignment, userId: 'bad' }]) {
+        expect((await request(server).post('/items/12/claim').set('Cookie', 'sid=valid').send(body)).status).toBe(400);
+    }
+    expect(repository.claim).not.toHaveBeenCalled();
+    expect((await request(server).post('/items/12/claim').set('Cookie', 'sid=valid').send(assignment)).status).toBe(204);
+    expect(repository.claim).toHaveBeenCalledWith(12, 'alice', assignment.projectId, assignment.userId);
+    const conflict = await request(server).post('/items/12/claim').set('Cookie', 'sid=valid').send(assignment);
     expect(conflict.status).toBe(409);
     expect(conflict.body).toEqual({ error: 'task_unavailable' });
 });

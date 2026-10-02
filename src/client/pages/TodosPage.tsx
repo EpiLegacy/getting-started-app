@@ -32,6 +32,7 @@ import {
 } from 'react';
 
 import React from 'react';
+import UnassignedTasks from '../features/todos/components/UnassignedTasks';
 import AddProject from '../features/todos/components/AddProject';
 import AddItem from '../features/todos/components/AddItem';
 import { useTasks } from '../features/todos/useTasks';
@@ -57,6 +58,8 @@ export default function TodosPage() {
   const {
     items,
     unassigned,
+    pending,
+    mutate,
     loading,
     error,
     refresh,
@@ -430,6 +433,10 @@ export default function TodosPage() {
           </Box>
         </Box>
       </Box>
+
+      {!loading && <UnassignedTasks tasks={unassigned} projects={projects}
+        disabled={pending || projectsLoading}
+        onClaim={(id, projectId, userId) => void mutate(() => itemsApi.claim(id, projectId, userId))} />}
 
       <Box sx={{ mb: 3 }}>
         <Typography
@@ -877,65 +884,6 @@ export default function TodosPage() {
             </Table>
           </TableContainer>
         )}
-      </Box>
-
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          component="h2"
-          variant="h6"
-          sx={{ mb: 1 }}
-        >
-          Unassigned tasks
-        </Typography>
-
-        <Paper
-          variant="outlined"
-          sx={{ p: 2 }}
-        >
-          {unassigned.length ===
-            0 ? (
-            <Typography
-              color="text.secondary"
-            >
-              No unassigned task.
-            </Typography>
-          ) : (
-            <Box
-              component="ul"
-              sx={{
-                display:
-                  'flex',
-                flexDirection:
-                  'column',
-                gap: 1,
-                listStyle: 'none',
-                m: 0,
-                p: 0,
-              }}
-            >
-              {unassigned.map(
-                (item) => (
-                  <Box
-                    component="li"
-                    key={item.id}
-                    sx={{
-                      display:
-                        'flex',
-                      justifyContent:
-                        'space-between',
-                      alignItems:
-                        'center',
-                    }}
-                  >
-                    <Typography>
-                      {item.name}
-                    </Typography>
-                  </Box>
-                ),
-              )}
-            </Box>
-          )}
-        </Paper>
       </Box>
 
       <AddProject

@@ -21,17 +21,22 @@ Express. Auth and task responses use `Cache-Control: no-store`.
 | `GET /auth/profile` | Yes | — | `200 { "user": { "id": "…", "email": "…", "createdAt": "…" } }`; ISO timestamp. |
 | `DELETE /auth/me` | Yes | `{ "password": "current password" }` | `204`; deletes account, owned tasks and notifications, revokes every session, clears cookie. |
 | `GET /items` | Yes | — | `200` array of your tasks. |
-| `GET /items/unassigned` | Yes | — | `200` array of shared tasks with no owner. |
+| `GET /items/unassigned` | Yes | — | `200` tasks needing assignment: shared tasks with neither assignment, your projectless tasks, and ownerless tasks in your projects. Includes nullable `projectId`. |
 | `POST /items` | Yes | `name`, `deadline`, `priorisation`, `status` | `201` created task; `completed` follows `status`. |
-| `POST /items/:id/claim` | Yes | — | `204`; makes an unassigned task private to you. |
+| `POST /items/:id/claim` | Yes | `{ projectId, userId }` (UUIDs) | `204`; atomically repairs an incomplete assignment. The caller and assignee must belong to the selected project. |
 | `PUT /items/:id` | Yes | All five task input fields below | `200` updated task. |
 | `PATCH /items/:id` | Yes | At least one task input field below | `200` updated task. |
-| `DELETE /items/:id` | Yes | — | `204`; deletes an owned task. |
+| `DELETE /items/:id` | Yes | — | `204`; deletes a task owned by you or linked to a project you belong to. |
 | `GET /notifications` | Yes | — | `200 { "notifications": [...], "unread": 2 }`; your 20 most recent, newest first. |
 | `POST /notifications/read` | Yes | — | `204`; marks all your notifications as read. |
 
 There is no single-task GET endpoint. Notifications are created only by the
-notification worker, from `task.completed` events; the API reads them. The
+notification worker, from `task.completed` events; the API reads them. Each
+current member of a linked project receives one notification, including the
+account that changed the status if it is still a member. Membership is resolved
+when the worker processes the event. Overlapping project memberships and event
+redelivery do not create duplicates. Tasks without a linked project produce no
+notifications. The
 routers are [auth](../src/modules/auth/routes.ts),
 [tasks](../src/modules/tasks/routes.ts),
 [projects](../src/modules/projects/routes.ts) and
@@ -79,8 +84,10 @@ Example task response:
 
 Unassigned tasks have `userId: null`. Use the string `id` returned by this API:
 it represents the new MySQL `task_key`, not the legacy SQLite ID. IDs must be
-positive decimal integers at most `4294967295`. Only an owner can update or
-delete a task; claim an unassigned task first. Concurrent claims have one winner.
+positive decimal integers at most `4294967295`. The owner can edit or delete a task. Members of any project linked to the task
+can also delete it or PATCH its status using `status`, `completed`, or both. Requests that
+include other editable fields remain owner-only. Completion events record the
+account that changed the status. Concurrent claims have one winner.
 PUT/PATCH optionally accept `x-correlation-id` for event tracing (maximum 64
 characters used); the server generates one if omitted.
 
@@ -108,8 +115,8 @@ not assume every error response is JSON.
 | `400` | `invalid_request` for registration/login validation; `invalid_deletion_request` for deletion validation; `invalid_task` for task validation. |
 | `401` | `unauthenticated` for missing/expired sessions; `invalid_credentials` for incorrect login. |
 | `403` | `invalid_password` when account deletion password is incorrect. |
-| `404` | `task_not_found` for invalid task IDs or attempts to update/delete missing, unassigned, or another user's tasks. |
-| `409` | `email_taken` on registration; `task_unavailable` if a valid claim ID is missing or already owned. |
+| `404` | `task_not_found` for invalid task IDs, missing tasks, or updates/deletions the caller is not authorized to perform. |
+| `409` | `email_taken` on registration; `task_unavailable` if an assignment is unavailable, already complete, inaccessible, or the selected user is not a project member. |
 | `429` | `too_many_attempts` for throttled registration/login; `Retry-After` gives seconds to wait. |
 | `503` | `auth_unavailable` on `/auth` and `/items` when MySQL authentication is not configured. |
 
@@ -133,3 +140,17 @@ rm /tmp/kanban-cookies.txt
 ```
 
 For an existing account, use `/auth/login` instead of `/auth/register`.
+
+### Repairing incomplete task assignments
+
+The task page separates incomplete assignments into **Tasks needing attention**.
+Choose a project first, then one of its members. A task already linked to a
+project keeps that link; a projectless task with an owner can only be repaired
+by that owner. Ownerless project tasks are visible only to members of their
+projects. Tasks with neither assignment remain available to authenticated users.
+
+Claims lock the task and validate membership before saving both assignments in
+one transaction. Fully assigned tasks cannot be reassigned through this endpoint.
+For legacy tasks linked to multiple projects, the assignee must belong to every
+linked project. Missing or malformed assignment fields return
+`400 invalid_assignment`. The project board omits tasks with no assigned user.

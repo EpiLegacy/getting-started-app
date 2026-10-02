@@ -1,17 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { transaction, unwrapError } from '../../infrastructure/db/drizzle';
-import { notifications, processedEvents } from '../../infrastructure/db/schema';
+import { notifications, processedEvents, projectItems, projectMembers } from '../../infrastructure/db/schema';
 import type { EventEnvelope } from '../../shared/events/envelope';
 import { TASK_COMPLETED, taskCompletedPayloadSchema } from '../../shared/events/catalog';
 import { HANDLER_NAME, type HandlerOutcome } from './handler';
-
-/**
- * Placeholder recipient: notifications are addressed to the actor, and until
- * authentication lands there is no user id to carry. Replaced by the project
- * members once User/Project exist. Duplicated from handler.ts, which uses
- * the same string.
- */
-const FALLBACK_RECIPIENT = 'demo-user';
 
 /**
  * Drizzle counterpart of handler.ts, selected by PERSISTENCE_DRIVER=drizzle
@@ -40,13 +33,19 @@ export async function handleTaskEvent(envelope: EventEnvelope): Promise<HandlerO
             throw error;
         }
 
-        await tx.insert(notifications).values({
-            id: randomUUID(),
-            recipientId: envelope.actorId ?? FALLBACK_RECIPIENT,
-            type: envelope.type,
-            body: `Task "${payload.name}" moved to Done`,
-            createdAt: new Date(),
-        });
+        const recipients = await tx.selectDistinct({ userId: projectMembers.userId })
+            .from(projectItems)
+            .innerJoin(projectMembers, eq(projectMembers.projectId, projectItems.projectId))
+            .where(eq(projectItems.taskKey, (/^\d+$/.test(payload.taskId) ? Number(payload.taskId) : 0)));
+        if (recipients.length) {
+            await tx.insert(notifications).values(recipients.map(({ userId }) => ({
+                id: randomUUID(),
+                recipientId: userId,
+                type: envelope.type,
+                body: `Task "${payload.name}" moved to Done`,
+                createdAt: new Date(),
+            })));
+        }
 
         return 'applied';
     });
