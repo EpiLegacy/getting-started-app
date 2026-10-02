@@ -6,6 +6,8 @@ import { createTheme, responsiveFontSizes } from '@mui/material';
  *
  * - 3.2: MUI's default blue (#1976d2) only reaches 4.0:1 as text on the page
  *   background and on alert backgrounds. #1565c0 gives at least 5.1:1.
+ * - 3.2: white text on MUI's orange warning (#ed6c02, the "medium" priority
+ *   chip) is 3.1:1. #b45309 gives 5.0:1.
  * - 3.3: the default field outline (23% black, about 1.6:1) is too faint to
  *   locate a field. 60% black gives about 5.7:1.
  * - 10.7: ButtonBase removes the browser outline and only shows a ripple on
@@ -20,6 +22,7 @@ const FOCUS_RING = { outline: `3px solid ${PRIMARY}`, outlineOffset: 2 };
 export const theme = responsiveFontSizes(createTheme({
     palette: {
         primary: { main: PRIMARY },
+        warning: { main: '#b45309' },
         background: { default: '#f4f4f4' },
     },
     typography: {

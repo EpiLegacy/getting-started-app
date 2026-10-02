@@ -2,7 +2,7 @@
 
 Todo App targets the **RGAA 4.1.2** (*Référentiel général d'amélioration de l'accessibilité*), the French accessibility standard. This page explains what the standard asks for, how the application was audited, and the result criterion by criterion. The public summary is the accessibility statement at [`/accessibility`](../src/client/pages/AccessibilityPage.tsx), linked from the footer of every page.
 
-**Result of the audit of 1 October 2026: partially compliant, 95% of the applicable criteria met (52 of 55).**
+**Result of the audit of 2 October 2026: partially compliant, 98% of the applicable criteria met (55 of 56).** The one criterion left, 7.1, needs a pass with a screen reader before it can be declared compliant.
 
 ## What the RGAA is
 
@@ -38,7 +38,7 @@ Not done yet: a pass with a screen reader (NVDA on Windows, VoiceOver on macOS).
 
 ### Pages audited
 
-Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile with the account deletion dialog, Accessibility statement, Site map, Page not found.
+Sign in, Create an account, Home, My tasks (the Kanban board, empty and with tasks of every priority, and the add task dialog), Your profile with the account deletion dialog, Accessibility statement, Site map, Page not found.
 
 ## What changed to get there
 
@@ -57,6 +57,12 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | Animations played regardless of user settings | Stopped under `prefers-reduced-motion` | 13.8 |
 | Search field labelled "Name" | "Search by name" | 11.2 |
 | Only one navigation system | Site map, linked from every page | 12.1, 12.3, 12.4 |
+| Board cards could only be moved by dragging them with a mouse | A Status select on every card, usable from the keyboard and on touch screens | 7.1, 7.3, 13.10 |
+| Moving or deleting a task or a project gave no feedback to screen readers | Announced in a live region | 7.5 |
+| Board columns and cards were untitled `div`s | h2 sections, h3 columns with their task count, h4 cards, as lists | 9.1, 9.3 |
+| Deadline, priority and assignee were only named in mouse tooltips | Written on the card: "Due …", "Priority: …", "Assigned to …" | 10.13, 3.1 |
+| The medium priority chip was white on orange, 3.1:1 | `#b45309`, 5.0:1 | 3.2 |
+| The task form was a bare Modal, 400 px wide, in French | A named Dialog that fits 320 px, in English like the rest of the interface | 7.1, 8.7, 10.11 |
 | No statement | Statement and footer mention | Legal obligation |
 
 ## Audit grid
@@ -78,7 +84,7 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 2.2 | Frame titles are relevant | NA |  |
 | **3. Colours** | | | |
 | 3.1 | Information is not conveyed by colour alone | C | Completed tasks are struck through and their checkbox is ticked; errors are written out. |
-| 3.2 | Text contrast is at least 4.5:1 (3:1 for large text) | C | Primary darkened to #1565c0 (5.1:1 or more on every background); completed rows #595959 on #f5f5f5 (6.4:1). Checked by axe on every page. |
+| 3.2 | Text contrast is at least 4.5:1 (3:1 for large text) | C | Primary darkened to #1565c0 (5.1:1 or more on every background); the medium priority chip from #ed6c02 (3.1:1) to #b45309 (5.0:1). Checked by axe on every page, board included. |
 | 3.3 | Interface components and graphics reach 3:1 | C | Field outlines raised from 1.6:1 to 5.7:1; focus ring #1565c0. |
 | **4. Multimedia** | | | |
 | 4.1 | Pre-recorded media have a transcript or audio description | NA | No audio or video. |
@@ -95,7 +101,7 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 4.12 | Non-temporal media are keyboard and pointer accessible | NA |  |
 | 4.13 | Media are compatible with assistive technologies | NA |  |
 | **5. Tables** | | | |
-| 5.1 | Complex data tables have a summary | NA | The task table is simple: one header row. |
+| 5.1 | Complex data tables have a summary | NA | The projects table is simple: one header row. |
 | 5.2 | Those summaries are relevant | NA |  |
 | 5.3 | Layout tables stay understandable when linearised | NA | No layout table. |
 | 5.4 | Data table titles are associated with their table | NA |  |
@@ -107,11 +113,11 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 6.1 | Links are explicit | C | Every link names its destination, e.g. "View my tasks", "Back to home". |
 | 6.2 | Every link has a name | C |  |
 | **7. Scripts** | | | |
-| 7.1 | Scripted components are compatible with assistive technologies | NC | The task creation form opens in a MUI Modal whose root is role="presentation": it is never announced as a dialog. |
+| 7.1 | Scripted components are compatible with assistive technologies | NC | Names, roles and states pass in Chromium (axe), and the task form is now a real dialog. Not yet verified with a screen reader, which the RGAA method requires for this criterion. |
 | 7.2 | Script alternatives are relevant | NA |  |
-| 7.3 | Scripted components are keyboard and pointer operable | C | MUI controls; checked by tabbing through every page. |
+| 7.3 | Scripted components are keyboard and pointer operable | C | MUI controls. Board cards move by drag and drop or with a Status select on each card, tested from the keyboard in CI. |
 | 7.4 | Changes of context are announced or user-initiated | C | Only form submissions and links change the page. |
-| 7.5 | Status messages are rendered by assistive technologies | C | Loading states use role="status", errors and confirmations role="alert". |
+| 7.5 | Status messages are rendered by assistive technologies | C | Loading states use role="status", errors and confirmations role="alert". Moving or deleting a task or a project is announced in a live region. |
 | **8. Mandatory elements** | | | |
 | 8.1 | Every page has a doctype | C |  |
 | 8.2 | Generated code is valid | C | No duplicate id or invalid ARIA (axe). |
@@ -119,14 +125,14 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 8.4 | The language code is relevant | C |  |
 | 8.5 | Every page has a title | C |  |
 | 8.6 | Page titles are relevant | C | Each route sets its own title, previously "Todo App" everywhere. |
-| 8.7 | Changes of language are declared | NC | The task creation form is in French ("Ajouter une tâche", "Nom", "Annuler") inside an English page. |
+| 8.7 | Changes of language are declared | C | The whole interface is in English; the board and its dialogs were translated from French. |
 | 8.8 | Language codes of those changes are relevant | C | The French address on the statement page carries lang="fr". |
 | 8.9 | Tags are not used only for presentation | C |  |
 | 8.10 | Changes of reading direction are declared | NA |  |
 | **9. Structure** | | | |
-| 9.1 | Information is structured with relevant headings | C | One h1 per page; the app name in the header is no longer an h6 ahead of it. |
+| 9.1 | Information is structured with relevant headings | C | One h1 per page; the board has h2 sections, h3 columns (with their task count) and h4 cards. |
 | 9.2 | The document outline is coherent (header, nav, main, footer) | C | Landmarks added: header, nav, main, footer. |
-| 9.3 | Lists are marked up as lists | C | Navigation menu, footer, tasks due today, site map. |
+| 9.3 | Lists are marked up as lists | C | Navigation menu, footer, tasks due today, board columns, project members, unassigned tasks, site map. |
 | 9.4 | Quotations are marked up | NA |  |
 | **10. Presentation** | | | |
 | 10.1 | Style sheets control presentation | C |  |
@@ -139,9 +145,9 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 10.8 | Hidden content is meant to be ignored | C |  |
 | 10.9 | Information is not conveyed by shape, size or position alone | C |  |
 | 10.10 | Same, correctly implemented | C |  |
-| 10.11 | Content reflows at 320 px without two-dimensional scrolling | NC | The task creation form is 400 px wide. Pages pass (checked in CI); the task table scrolls on its own, which data tables may. |
+| 10.11 | Content reflows at 320 px without two-dimensional scrolling | C | Every page and the task dialog, checked in CI. The projects table scrolls on its own, which data tables may. |
 | 10.12 | Text spacing can be increased without loss | C |  |
-| 10.13 | Content shown on hover or focus can be controlled | NA |  |
+| 10.13 | Content shown on hover or focus can be controlled | NA | No tooltip: the board's deadline, priority and assignee labels are written on the cards. |
 | 10.14 | Content shown on hover is also reachable from the keyboard | NA |  |
 | **11. Forms** | | | |
 | 11.1 | Every field has a label | C |  |
@@ -152,8 +158,8 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 11.6 | Groups have a legend | NA |  |
 | 11.7 | Legends are relevant | NA |  |
 | 11.8 | Options of select lists are grouped when needed | NA |  |
-| 11.9 | Button names are relevant | C | Icon buttons are named, e.g. "Delete <task>", "Mark <task> complete". |
-| 11.10 | Input control is used appropriately (required fields, formats, errors) | C | required attributes, password length announced through aria-describedby, errors in role="alert". |
+| 11.9 | Button names are relevant | C | Icon buttons are named ("Delete the task <name>"); repeated buttons name their project and keep their visible text ("Add member to <project>"). |
+| 11.10 | Input control is used appropriately (required fields, formats, errors) | C | required attributes, "All fields are required" in the task dialog, password length announced through aria-describedby, errors in role="alert". |
 | 11.11 | Errors come with suggestions | C |  |
 | 11.12 | Legal, financial or personal data can be changed, checked or confirmed | C | Account deletion asks for the password in a confirmation dialog. |
 | 11.13 | The purpose of personal fields can be inferred | C | autocomplete="email", "current-password", "new-password". |
@@ -179,19 +185,11 @@ Sign in, Create an account, Home, My tasks (empty and with tasks), Your profile 
 | 13.7 | Sudden changes of brightness or flashes are avoided | NA |  |
 | 13.8 | Moving or blinking content can be controlled | NA | Only short transitions, and none at all under prefers-reduced-motion. |
 | 13.9 | Content works in any orientation | C |  |
-| 13.10 | Complex gestures have a simple alternative | NA |  |
+| 13.10 | Complex gestures have a simple alternative | C | Dragging a card has a single-tap alternative: the Status select. |
 | 13.11 | Pointer actions can be cancelled | C | MUI buttons act on release. |
 | 13.12 | Motion-triggered features have an alternative | NA |  |
 
 ## Follow-up
 
-1. **Kanban board (#92).** Once merged, it needs, before the statement can stay at this rate:
-   - a keyboard alternative to drag and drop, e.g. a "Status" select on each card (7.1, 7.3);
-   - a live region announcing moves and deletions (7.5);
-   - names on the icon-only delete buttons (11.9);
-   - headings for the board, its columns and its cards (9.1), and cards as lists (9.3);
-   - the white-on-orange "medium" priority chip, at 3.1:1 (3.2);
-   - labels hidden in tooltips made visible (10.13).
-2. **Task creation form.** `role="dialog"` (or MUI `Dialog`), English labels, a width that fits 320 px. That fixes the three remaining non-compliances: 7.1, 8.7, 10.11.
-3. **Screen reader pass** with NVDA and VoiceOver on the main journeys: sign up, add a task, complete it, delete the account.
-4. Keep this grid, the CI test and the statement in sync: the figures in [`AccessibilityPage.tsx`](../src/client/pages/AccessibilityPage.tsx) come from this grid.
+1. **Screen reader pass** with NVDA (Windows) and VoiceOver (macOS) on the main journeys: sign up, add a task, move it on the board, delete the account. That is the last step before criterion 7.1, and the application, can be declared compliant.
+2. Keep this grid, the CI test and the statement in sync: the figures in [`AccessibilityPage.tsx`](../src/client/pages/AccessibilityPage.tsx) come from this grid.
